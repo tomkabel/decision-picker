@@ -33,29 +33,39 @@ Collect the candidates (from the user's message or your own analysis) into
 caps at 4. If there are more than 4, pre-filter to the top 4 by your own judgment
 and say what got cut.
 
-### 2. Score each choice
+### 2. Score each choice against the rubric
 
-For each candidate, assign a confidence score (0-100%) yourself: how likely this
-is the right call given the stated goal and constraints. Do this in one pass,
-no subagents — it's your own estimate, not a panel verdict yet.
+Don't guess a single opaque percentage. Score each candidate on the four
+criteria in `scripts/rubric.py` (0-100 each), then get the weighted total from
+`score_choice()` / `rank_choices()`:
 
-Sort descending. The top score is your **best-guess default**.
+- `fit_to_constraints` (0.40) — how well it satisfies the stated goal/limits
+- `reversibility` (0.25) — how cheap it is to undo if wrong
+- `evidence_strength` (0.20) — how solid your basis is (docs, tests, precedent you've actually seen)
+- `precedent` (0.15) — how proven this choice is elsewhere
 
-### 3. Escalate to a panel only when it's close or high-stakes
+Sort descending. The top score is your **best-guess default**. Keep the
+sub-scores around — step 4 shows them, not just the total.
 
-Skip this step by default. Run it only if:
-- the top two scores are within ~15 points of each other, or
-- the decision is expensive to reverse (architecture, public API, spend, irreversible data ops)
+### 3. Escalate to a panel — auto on close calls, or whenever the user asks
+
+Use `scripts/panel_trigger.py`'s `should_escalate()`: it returns true if the
+top two totals are within 15 points, the decision is flagged high-stakes, OR
+the user's message contains a force phrase ("run the panel", "second opinion",
+"get the panel", "convene the council") — the force phrase always wins, even
+on a clear-cut score gap.
 
 If escalating, invoke the `council` skill with the choice list as the decision
-question. Take its verdict's recommendation and re-score: bump the panel's pick
-up, note dissent in that option's description.
+question. Take its verdict's recommendation, and reflect what changed in the
+rubric, not just a label prefix: if a voice's argument should move a
+sub-score (e.g. Critic surfaces a reversibility problem you missed), adjust
+that sub-score and re-total, so the visible numbers match the reasoning.
 
 ### 4. Present via AskUserQuestion
 
 One call, one question (or up to 4 if there are independent sub-decisions).
-- Order options by score, highest first.
-- Put the score and a one-clause reason in each option's `description`, e.g.
+- Order options by rubric total, highest first.
+- Put the total and a one-clause reason in each option's `description`, e.g.
   `"78% confidence — fastest to ship, weakest test coverage"`.
 - Label the top option's `label` with `(Recommended)` per the tool's own convention.
 - If step 3 ran, prefix the recommended option's description with `Panel pick — `.

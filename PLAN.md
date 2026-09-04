@@ -5,38 +5,37 @@ started as a thin wrapper around native `AskUserQuestion` + the `council` skill.
 Three things were deliberately skipped at v1. This plan builds them in order of
 payoff, each phase shippable and useful on its own.
 
-## Phase 0 — repo bootstrap
-- [ ] `git init`, commit the symlinked skill as a real file (git doesn't follow
+## Phase 0 — repo bootstrap ✅ done (commit `4b57bb3`)
+- [x] `git init`, commit the symlinked skill as a real file (git doesn't follow
       symlinks portably across clones) — copy `SKILL.md` into this repo, keep
       `~/.claude/skills/decision-picker` as a symlink *back* to this repo instead.
-- [ ] `README.md`: what this is, how to install (symlink into `~/.claude/skills/`
+- [x] `README.md`: what this is, how to install (symlink into `~/.claude/skills/`
       or a project's `.claude/skills/`).
-- [ ] No test framework yet — one `test_decision_picker.py`-style smoke check
+- [x] No test framework yet — one `test_decision_picker.py`-style smoke check
       per phase below (ponytail rule: non-trivial logic needs one runnable check).
 
-## Phase 1 — real confidence scoring (replace single-pass self-estimate)
-Problem today: step 2 is "assign a number, trust yourself." No calibration, no
+## Phase 1 — real confidence scoring (replace single-pass self-estimate) ✅ done
+Problem was: step 2 was "assign a number, trust yourself." No calibration, no
 reproducibility, no reason trail.
 
-- [ ] Define a scoring rubric as explicit weighted criteria (fit-to-constraints,
-      reversibility, evidence strength, precedent) instead of a vibe number.
-- [ ] Score each choice against the rubric, show the sub-scores, not just the
-      total — this is the "confidence rating visible for each choice" capability
-      done properly instead of a single opaque percentage.
-- [ ] Self-check: a script/test that feeds a known choice set with an obvious
-      winner and asserts the rubric ranks it first.
+- [x] Defined a scoring rubric as explicit weighted criteria (`scripts/rubric.py`:
+      fit_to_constraints 0.40, reversibility 0.25, evidence_strength 0.20, precedent 0.15).
+- [x] `score_choice()` / `rank_choices()` keep sub-scores visible, not just the
+      total — SKILL.md step 2 now points here instead of a vibe percentage.
+- [x] Self-check: `scripts/rubric.py` demo() asserts the rubric ranks the
+      known winner first — `python3 scripts/rubric.py`.
 
-## Phase 2 — always-available panel mode (not just close-call escalation)
-Problem today: the senior-expert-panel path only fires when scores are within
-~15 points or the decision is flagged high-stakes — user has no way to force it.
+## Phase 2 — always-available panel mode (not just close-call escalation) ✅ done
+Problem was: the senior-expert-panel path only fired when scores were within
+~15 points or the decision was flagged high-stakes — no way for the user to force it.
 
-- [ ] Add an explicit trigger: user says "run the panel" / "get a second opinion"
-      → invoke `council` unconditionally, regardless of score gap.
-- [ ] Surface the panel's per-voice confidence deltas (did Skeptic/Critic move
-      the score, and by how much) back into the rubric from Phase 1, not just a
-      one-line "Panel pick" prefix.
-- [ ] Self-check: verify the forced-panel path runs `council` even when scores
-      are identical or far apart (i.e., the override actually overrides).
+- [x] `scripts/panel_trigger.py`: explicit force phrases ("run the panel",
+      "second opinion", "get the panel", "convene the council") escalate to
+      `council` unconditionally, regardless of score gap.
+- [x] SKILL.md step 3 now tells Claude to fold panel arguments back into the
+      Phase 1 sub-scores and re-total, instead of a cosmetic "Panel pick" prefix.
+- [x] Self-check: `scripts/panel_trigger.py` demo() asserts the forced path
+      escalates even with a wide score gap — `python3 scripts/panel_trigger.py`.
 
 ## Phase 3 — custom picker UI beyond AskUserQuestion's 4-option cap
 Problem today: more than 4 candidates get silently pre-filtered.
