@@ -1,0 +1,260 @@
+[
+  {
+    "name": "clean-separated-winner",
+    "expect_violations": [],
+    "trace": {
+      "scenario": "clear winner, no escalation needed",
+      "candidates": ["Redis", "In-memory LRU", "File-based"],
+      "events": [
+        {"type": "rubric", "recommended": "Redis", "separated": true, "excluded": []},
+        {"type": "escalation", "ran": false},
+        {"type": "ask", "options": [
+          {"label": "Redis (Recommended)", "description": "Strong lead — proven, adds infra dependency"},
+          {"label": "In-memory LRU", "description": "zero infra, lost on restart"},
+          {"label": "File-based", "description": "simplest, slowest"}
+        ]},
+        {"type": "answer", "label": "Redis", "is_other": false},
+        {"type": "action", "label": "Redis"}
+      ]
+    }
+  },
+  {
+    "name": "user-overrides-recommendation",
+    "expect_violations": [],
+    "trace": {
+      "scenario": "user picks the non-recommended option; agent must obey",
+      "candidates": ["Redis", "In-memory LRU"],
+      "events": [
+        {"type": "rubric", "recommended": "Redis", "separated": true, "excluded": []},
+        {"type": "escalation", "ran": false},
+        {"type": "ask", "options": [
+          {"label": "Redis (Recommended)", "description": "Strong lead"},
+          {"label": "In-memory LRU", "description": "zero infra"}
+        ]},
+        {"type": "answer", "label": "In-memory LRU", "is_other": false},
+        {"type": "action", "label": "In-memory LRU"}
+      ]
+    }
+  },
+  {
+    "name": "contested-escalates",
+    "expect_violations": [],
+    "trace": {
+      "scenario": "top two inside noise band, review runs",
+      "candidates": ["Postgres", "MySQL"],
+      "events": [
+        {"type": "rubric", "recommended": "Postgres", "separated": false, "excluded": []},
+        {"type": "escalation", "ran": true},
+        {"type": "ask", "options": [
+          {"label": "Postgres (Recommended)", "description": "Contested — gap 4 pts, richer types"},
+          {"label": "MySQL", "description": "team knows it better"}
+        ]},
+        {"type": "answer", "label": "Postgres", "is_other": false},
+        {"type": "action", "label": "Postgres"}
+      ]
+    }
+  },
+  {
+    "name": "other-answer-rescored",
+    "expect_violations": [],
+    "trace": {
+      "scenario": "user types a new candidate via Other; it gets scored before use",
+      "candidates": ["Redis", "In-memory LRU"],
+      "events": [
+        {"type": "rubric", "recommended": "Redis", "separated": true, "excluded": []},
+        {"type": "escalation", "ran": false},
+        {"type": "ask", "options": [
+          {"label": "Redis (Recommended)", "description": "Strong lead"},
+          {"label": "In-memory LRU", "description": "zero infra"}
+        ]},
+        {"type": "answer", "label": "Memcached", "is_other": true},
+        {"type": "rubric", "recommended": "Memcached", "separated": true, "excluded": []},
+        {"type": "action", "label": "Memcached"}
+      ]
+    }
+  },
+  {
+    "name": "REGRESSION-percent-leak",
+    "expect_violations": ["NO_PERCENT"],
+    "trace": {
+      "scenario": "Phase 4 reverted: a confidence percentage reaches the user",
+      "candidates": ["Redis", "In-memory LRU"],
+      "events": [
+        {"type": "rubric", "recommended": "Redis", "separated": true, "excluded": []},
+        {"type": "escalation", "ran": false},
+        {"type": "ask", "options": [
+          {"label": "Redis (Recommended)", "description": "82% confidence — proven"},
+          {"label": "In-memory LRU", "description": "61% confidence — zero infra"}
+        ]},
+        {"type": "answer", "label": "Redis", "is_other": false},
+        {"type": "action", "label": "Redis"}
+      ]
+    }
+  },
+  {
+    "name": "REGRESSION-five-options",
+    "expect_violations": ["MAX_OPTIONS"],
+    "trace": {
+      "scenario": "more options than the tool accepts",
+      "candidates": ["A", "B", "C", "D", "E"],
+      "events": [
+        {"type": "rubric", "recommended": "A", "separated": true, "excluded": []},
+        {"type": "escalation", "ran": false},
+        {"type": "ask", "options": [
+          {"label": "A (Recommended)", "description": "x"},
+          {"label": "B", "description": "x"},
+          {"label": "C", "description": "x"},
+          {"label": "D", "description": "x"},
+          {"label": "E", "description": "x"}
+        ]},
+        {"type": "answer", "label": "A", "is_other": false},
+        {"type": "action", "label": "A"}
+      ]
+    }
+  },
+  {
+    "name": "REGRESSION-ignored-user-pick",
+    "expect_violations": ["USER_PICK_HONORED"],
+    "trace": {
+      "scenario": "agent acts on its own recommendation instead of the answer",
+      "candidates": ["Redis", "In-memory LRU"],
+      "events": [
+        {"type": "rubric", "recommended": "Redis", "separated": true, "excluded": []},
+        {"type": "escalation", "ran": false},
+        {"type": "ask", "options": [
+          {"label": "Redis (Recommended)", "description": "Strong lead"},
+          {"label": "In-memory LRU", "description": "zero infra"}
+        ]},
+        {"type": "answer", "label": "In-memory LRU", "is_other": false},
+        {"type": "action", "label": "Redis"}
+      ]
+    }
+  },
+  {
+    "name": "REGRESSION-contested-no-escalation",
+    "expect_violations": ["ESCALATION_WHEN_CONTESTED"],
+    "trace": {
+      "scenario": "inseparable top two presented as a confident pick",
+      "candidates": ["Postgres", "MySQL"],
+      "events": [
+        {"type": "rubric", "recommended": "Postgres", "separated": false, "excluded": []},
+        {"type": "escalation", "ran": false},
+        {"type": "ask", "options": [
+          {"label": "Postgres (Recommended)", "description": "richer types"},
+          {"label": "MySQL", "description": "team knows it"}
+        ]},
+        {"type": "answer", "label": "Postgres", "is_other": false},
+        {"type": "action", "label": "Postgres"}
+      ]
+    }
+  },
+  {
+    "name": "REGRESSION-forced-panel-skipped",
+    "expect_violations": ["ESCALATION_WHEN_CONTESTED"],
+    "trace": {
+      "scenario": "user asked for a second opinion in words the old keyword list missed",
+      "forced_panel": true,
+      "candidates": ["Redis", "In-memory LRU"],
+      "events": [
+        {"type": "rubric", "recommended": "Redis", "separated": true, "excluded": []},
+        {"type": "escalation", "ran": false},
+        {"type": "ask", "options": [
+          {"label": "Redis (Recommended)", "description": "Strong lead"},
+          {"label": "In-memory LRU", "description": "zero infra"}
+        ]},
+        {"type": "answer", "label": "Redis", "is_other": false},
+        {"type": "action", "label": "Redis"}
+      ]
+    }
+  },
+  {
+    "name": "REGRESSION-infeasible-offered",
+    "expect_violations": ["INFEASIBLE_NOT_OFFERED"],
+    "trace": {
+      "scenario": "option gated out on a hard constraint still shown as a choice",
+      "candidates": ["Managed SaaS", "Self-hosted"],
+      "events": [
+        {"type": "rubric", "recommended": "Self-hosted", "separated": true, "excluded": ["Managed SaaS"]},
+        {"type": "escalation", "ran": false},
+        {"type": "ask", "options": [
+          {"label": "Self-hosted (Recommended)", "description": "meets the air-gap requirement"},
+          {"label": "Managed SaaS", "description": "cheaper but off-prem"}
+        ]},
+        {"type": "answer", "label": "Self-hosted", "is_other": false},
+        {"type": "action", "label": "Self-hosted"}
+      ]
+    }
+  },
+  {
+    "name": "REGRESSION-unscored-other-executed",
+    "expect_violations": ["OTHER_RESCORED"],
+    "trace": {
+      "scenario": "free-text candidate acted on without ever being scored",
+      "candidates": ["Redis", "In-memory LRU"],
+      "events": [
+        {"type": "rubric", "recommended": "Redis", "separated": true, "excluded": []},
+        {"type": "escalation", "ran": false},
+        {"type": "ask", "options": [
+          {"label": "Redis (Recommended)", "description": "Strong lead"},
+          {"label": "In-memory LRU", "description": "zero infra"}
+        ]},
+        {"type": "answer", "label": "Memcached", "is_other": true},
+        {"type": "action", "label": "Memcached"}
+      ]
+    }
+  },
+  {
+    "name": "REGRESSION-invented-option",
+    "expect_violations": ["NO_INVENTED_OPTIONS"],
+    "trace": {
+      "scenario": "agent silently substitutes an option the user never offered",
+      "candidates": ["Redis", "In-memory LRU"],
+      "events": [
+        {"type": "rubric", "recommended": "Redis", "separated": true, "excluded": []},
+        {"type": "escalation", "ran": false},
+        {"type": "ask", "options": [
+          {"label": "Redis (Recommended)", "description": "Strong lead"},
+          {"label": "DynamoDB", "description": "managed, nobody asked for this"}
+        ]},
+        {"type": "answer", "label": "Redis", "is_other": false},
+        {"type": "action", "label": "Redis"}
+      ]
+    }
+  },
+  {
+    "name": "REGRESSION-two-recommended-labels",
+    "expect_violations": ["RECOMMENDED_SINGLE"],
+    "trace": {
+      "scenario": "more than one default marker on the same menu",
+      "candidates": ["Redis", "In-memory LRU"],
+      "events": [
+        {"type": "rubric", "recommended": "Redis", "separated": true, "excluded": []},
+        {"type": "escalation", "ran": false},
+        {"type": "ask", "options": [
+          {"label": "Redis (Recommended)", "description": "Strong lead"},
+          {"label": "In-memory LRU (Recommended)", "description": "also good?"}
+        ]},
+        {"type": "answer", "label": "Redis", "is_other": false},
+        {"type": "action", "label": "Redis"}
+      ]
+    }
+  },
+  {
+    "name": "REGRESSION-recommended-not-top",
+    "expect_violations": ["RECOMMENDED_MATCHES_TOP"],
+    "trace": {
+      "scenario": "default marker on an option the rubric did not rank first",
+      "candidates": ["Redis", "In-memory LRU"],
+      "events": [
+        {"type": "rubric", "recommended": "Redis", "separated": true, "excluded": []},
+        {"type": "escalation", "ran": false},
+        {"type": "ask", "options": [
+          {"label": "In-memory LRU (Recommended)", "description": "not what the rubric said"},
+          {"label": "Redis", "description": "actually ranked first"}
+        ]},
+        {"type": "answer", "label": "Redis", "is_other": false},
+        {"type": "action", "label": "Redis"}
+      ]
+    }
+  }
+]

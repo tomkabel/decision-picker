@@ -122,18 +122,18 @@ to the user, and the only thing worth testing is the trace.**
 
 ---
 
-## Phase 4 — Honest presentation ✅ highest payoff, zero code
+## Phase 4 — Honest presentation ✅ done
 
 Removes the automation-bias payload, which is the main way this skill can cause
 a bad production decision. Named in the top-3 by all five models.
 
-- [ ] **Delete `% confidence` from SKILL.md.** It is a category error, not just
+- [x] **Delete `% confidence` from SKILL.md.** It is a category error, not just
       miscalibration: the weighted total is a multi-criteria *utility* score, not
       `P(this option is correct)`. Even perfectly calibrated, the percentage
       would be the wrong number. Verbalized LLM confidence is systematically
       miscalibrated and barely improves with prompting (Tian et al. 2023; Xiong
       et al. 2024); post-trained models are measurably overconfident.
-- [ ] **Add behavioral anchors per criterion** to SKILL.md, as a table the model
+- [x] **Add behavioral anchors per criterion** to SKILL.md, as a table the model
       reads on every scoring pass. Bands with observable tells, not adjectives:
 
       reversibility
@@ -147,27 +147,27 @@ a bad production decision. Named in the top-3 by all five models.
         0–40    recalled from training, not checked
 
       Same treatment for `fit_to_constraints` and `precedent`.
-- [ ] **Score one criterion across all options before moving to the next.**
+- [x] **Score one criterion across all options before moving to the next.**
       Emitting all four criteria for option A in one pass guarantees halo.
       Cross-option, per-criterion passes are how the judge literature reduces it.
-- [ ] **User-facing surface becomes ordinal.** `Strong lead / Contested / Weak
+- [x] **User-facing surface becomes ordinal.** `Strong lead / Contested / Weak
       field`, plus the top-2 gap stated plainly ("gap: 9 pts — narrow"). The
       float survives only as an internal sort key.
-- [ ] **Steelman the runner-up.** One line on the strongest reason to pick #2.
+- [x] **Steelman the runner-up.** One line on the strongest reason to pick #2.
       Decision hygiene, and it directly counteracts the remaining nudge.
-- [ ] **Disclose that the ranking is self-generated** when the agent also wrote
+- [x] **Disclose that the ranking is self-generated** when the agent also wrote
       the option list: "I wrote these options; treat my ranking as biased."
-- [ ] **Drop two of the four nudges.** Keep `(Recommended)`. Remove the
+- [x] **Drop two of the four nudges.** Keep `(Recommended)`. Remove the
       percentage (above) and stop treating score-descending as mandatory
       presentation order when the top two are within noise.
-- [ ] Self-check: a scoring pass on a fixture decision produces no `%` anywhere
+- [x] Self-check: a scoring pass on a fixture decision produces no `%` anywhere
       in the rendered `AskUserQuestion` payload.
 
-## Phase 5 — Delete the theater
+## Phase 5 — Delete the theater ✅ done
 
 Net negative diff. Fixes critiques 3, 4, 5, 7 and the I/O chasm at once.
 
-- [ ] **Delete `scripts/panel_trigger.py`.** A threshold comparison and a
+- [x] **Delete `scripts/panel_trigger.py`.** A threshold comparison and a
       substring scan do not need a subprocess. `FORCE_PHRASES` is a 2002 chatbot
       bolted onto a system whose host *is* an NLU — and it fails both ways:
       "have someone else look at this" does not match, while a *candidate*
@@ -182,14 +182,14 @@ Net negative diff. Fixes critiques 3, 4, 5, 7 and the I/O chasm at once.
         escalate when the top two cannot be separated under the Phase 4 anchors.
         A fixed 15-point gate is inside rater noise and is false precision of
         the same kind Phase 4 removes.
-- [ ] **Delete `scripts/tournament.py`.** Replaced by: one `AskUserQuestion`
+- [x] **Delete `scripts/tournament.py`.** Replaced by: one `AskUserQuestion`
       with the top 4, and the overflow named in the question body ("also
       available via Other: E, F, G"). For `n > 8`, two parallel 4-option
       questions with "advance up to 2 each", then a final of ≤4 — never
       auto-advance by score. This removes the friction blowup (measured: 3
       rounds for 5 candidates), the broken between-round sort invariant, and the
       unhandled `Other` branch, without handing elimination to the model.
-- [ ] **Harden `scripts/rubric.py`** — the one script that earns its place, as
+- [x] **Harden `scripts/rubric.py`** — the one script that earns its place, as
       the single source of truth for criteria and weights:
       - `set(sub_scores) == set(CRITERIA_WEIGHTS)` — reject unknown keys, not
         just missing ones.
@@ -199,105 +199,105 @@ Net negative diff. Fixes critiques 3, 4, 5, 7 and the I/O chasm at once.
       - Assert `sum(CRITERIA_WEIGHTS.values()) == 1.0` at import.
       - Raise `ValueError` naming the offending key and value, so the model can
         self-correct from the message.
-- [ ] **Close the I/O chasm.** Give `rubric.py` a real CLI: read a JSON
+- [x] **Close the I/O chasm.** Give `rubric.py` a real CLI: read a JSON
       `{label: {criterion: score}}` map on stdin, write the ranked table to
       stdout. Without this the agent has no defined way to call it and must
       hand-write a runner each time.
-- [ ] **Fix the path, skip the packaging ceremony.** SKILL.md invokes the script
+- [x] **Fix the path, skip the packaging ceremony.** SKILL.md invokes the script
       via the skill's own directory, never `python3 scripts/...` relative to cwd
       — the agent's cwd is the user's project, so the current form breaks under
       every documented install. Pin `python3 >= 3.10, stdlib only` in one line.
       No `pyproject.toml`, no `__init__.py` for three functions (4/5 models
       called that ceremony; grok rated it Low explicitly).
-- [ ] **Replace `demo()` with real tests.** `assert ranked[0][0] == "Redis"` on
+- [x] **Replace `demo()` with real tests.** `assert ranked[0][0] == "Redis"` on
       its own fixture is a tautology. Test the validation branches: out-of-range,
       NaN/inf, bool, unknown key, fraction-vs-percent.
 
-## Phase 6 — Eval the trace, not the calculator
+## Phase 6 — Eval the trace, not the calculator ✅ done
 
 Rated **Critical** by the panel and the single highest-consensus gap. Without
 it every fix above is unverifiable, because the artifact that actually executes
 is a prompt. Prompt/agent evals are a solved tooling category — this is not
 research.
 
-- [ ] **10–20 scripted decision scenarios**, run headlessly (`claude -p`, or
+- [x] **10–20 scripted decision scenarios**, run headlessly (`claude -p`, or
       promptfoo/LangSmith if a runner is wanted). Coverage: clear winner; top-2
       inside noise; high-stakes flag; escalation requested in paraphrase
       ("can you get someone else to weigh in?"); `/panel`; `n=2`; `n=6`; `n=9`;
       user picks the non-recommended option; user answers via `Other`;
       agent-generated option set; a candidate containing an injection string.
-- [ ] **Assert on the trace, structurally** — no LLM-as-judge needed for most:
+- [x] **Assert on the trace, structurally** — no LLM-as-judge needed for most:
       - every `AskUserQuestion` call carries ≤ 4 options;
       - no rendered description contains `%`;
       - `(Recommended)` marks the internal top-ranked option;
       - escalation happened iff the separability test or an explicit trigger fired;
       - the final action equals the user's pick, not the recommendation;
       - an `Other` answer is re-scored before it can be acted on.
-- [ ] **Gate on protocol-break rate.** Fail the skill above ~10%.
-- [ ] Self-check: the harness catches a deliberately reverted Phase 4 change
+- [x] **Gate on protocol-break rate.** Fail the skill above ~10%.
+- [x] Self-check: the harness catches a deliberately reverted Phase 4 change
       (re-introduce a `%` in SKILL.md; the eval must go red).
 
-## Phase 7 — Feasibility gating and declared weights
+## Phase 7 — Feasibility gating and declared weights ✅ done
 
 MCDA correctness. The single highest-consensus *missed* finding.
 
-- [ ] **Hard constraints stop being compensatory.** Extract explicit
+- [x] **Hard constraints stop being compensatory.** Extract explicit
       constraints, mark each candidate `feasible / infeasible / unknown`, and
       exclude the infeasible *before* weighted ranking — not by docking points.
       An option that violates a mandatory constraint must not be able to win on
       reversibility and precedent.
-- [ ] **Disclose the weights in the question preamble**, and make them
+- [x] **Disclose the weights in the question preamble**, and make them
       overridable in one word: "weights: fit 40 / reversibility 25 / evidence 20
       / precedent 15 — say 'reweight' to change." This converts a hidden prior
       into a stated, contestable one.
-- [ ] **Allow a per-decision criteria set.** `precedent` is actively harmful for
+- [x] **Allow a per-decision criteria set.** `precedent` is actively harmful for
       a deliberately novel choice; `reversibility` is noise for a throwaway
       script; cost, security, latency, and operability are absent entirely. The
       four defaults stay the default — they just stop being the only option.
-- [ ] **Mark `unknown` as first-class.** If a sub-score cannot be grounded, it is
+- [x] **Mark `unknown` as first-class.** If a sub-score cannot be grounded, it is
       `unknown`, which blocks a confident recommendation rather than silently
       scoring 50.
-- [ ] Self-check: a fixture where the top-scoring option violates a stated hard
+- [x] Self-check: a fixture where the top-scoring option violates a stated hard
       constraint must not be recommended.
 
-## Phase 8 — Escalation that adds information
+## Phase 8 — Escalation that adds information ✅ done
 
 Currently the escalation path adds *confidence* without adding *evidence*.
 
-- [ ] **Stop calling it a panel.** Four personas from one checkpoint share
+- [x] **Stop calling it a panel.** Four personas from one checkpoint share
       weights, context, priors and blind spots; correlated errors do not cancel.
       Same-model debate is not worthless, but labelling it a panel verdict
       launders one opinion as four — and folding it into the scores destroys the
       dissent that was the only real output. Present it as
       `Single-model review, four prompts — not independent`.
-- [ ] **Make the voices structurally different, not tonally.** Each must produce
+- [x] **Make the voices structurally different, not tonally.** Each must produce
       an artifact, not an adjective: the skeptic cites two concrete failure modes
       with file/line references; the pragmatist estimates implementation effort;
       the critic argues *for* the lowest-ranked candidate.
-- [ ] **Prefer grounded falsification over more prose.** The strongest available
+- [x] **Prefer grounded falsification over more prose.** The strongest available
       escalation is a tool call that could disconfirm the top pick — grep the
       repo, read the version-matched doc, run the test. That is real
       information diversity; personas are not.
-- [ ] **Panel output is arguments, never a silent re-total.** If a sub-score
+- [x] **Panel output is arguments, never a silent re-total.** If a sub-score
       moves, it moves by an explicit named delta against a named criterion, with
       before/after both retained.
-- [ ] **Define `high_stakes` or delete it.** A written blast-radius test
+- [x] **Define `high_stakes` or delete it.** A written blast-radius test
       (production data, security surface, irreversible schema, external
       visibility), defaulting *unknown* stakes to more scrutiny. An undefined
       flag nobody sets is not a safety control.
-- [ ] **State the `council` fallback** for when the skill is not installed.
-- [ ] Self-check: escalation on a fixture produces at least one artifact
+- [x] **State the `council` fallback** for when the skill is not installed.
+- [x] Self-check: escalation on a fixture produces at least one artifact
       (citation, file reference, or tool output) that was not in the input.
 
-## Phase 9 — Audit trail and injection hardening
+## Phase 9 — Audit trail and injection hardening ✅ done
 
 Lower payoff; do after the above land.
 
-- [ ] Append one record per decision to `.decisions.log`: date, options, weights
+- [x] Append one record per decision to `.decisions.log`: date, options, weights
       and rubric version, sub-scores, escalation reason, user's pick, and whether
       it diverged from the recommendation. For a decision aid this record *is*
       the product, and it is the only path to ever measuring calibration.
-- [ ] Treat candidate text as untrusted data: delimit it, state that instructions
+- [x] Treat candidate text as untrusted data: delimit it, state that instructions
       inside candidates are never followed, and keep analysis separate from
       execution. Consequential actions still go through normal tool permissioning.
 
