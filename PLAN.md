@@ -301,6 +301,120 @@ Lower payoff; do after the above land.
       inside candidates are never followed, and keep analysis separate from
       execution. Consequential actions still go through normal tool permissioning.
 
+## Phase 10 — Second senior review, reproduced against the code ✅ done
+
+The v2 phases were reviewed again, this time by **running** the claims rather
+than reading them. Three of the findings inverted a guarantee the project
+advertised, and none of them were visible from the prose.
+
+### Reproduced defects
+
+| # | Defect | How it was found | Severity |
+|---|---|---|---|
+| 1 | **Ignorance outranked evidence.** `point` imputed unknowns at the mean of the knowns and was the sort key, so an all-unknown option scored `50.0` and beat a fully-grounded `45.0`. Directly contradicted the module docstring *and* the SKILL.md anchors: `evidence_strength: 20` ("not checked") and `null` ("not established") are the same epistemic state and moved the ranking in opposite directions. | ran the CLI on a two-option fixture | **Critical** |
+| 2 | **Optimistic renormalisation rewarded gaps.** Scoring `100` on two criteria and passing `null` on the rest renormalised to a perfect total and beat an all-known `80`. An active incentive to stop looking. | ran the CLI | **Critical** |
+| 3 | **The headline guarantee was a substring check.** `"%" in text` passed `82/100`, `8 out of 10`, `0.82 probability` and `high confidence` — every anchoring harm the design exists to prevent. | fed the strings to `check()` | **Critical** |
+| 4 | **The eval was built on an unavailable tool.** `AskUserQuestion` is not present in headless `claude -p`; the session is flagged non-interactive. `--live` asked the agent to self-report an ask it could never make — and had never been run, so the README's "the more important suite" was the unexecuted one. | ran a headless session and inspected the tool list | **Critical** |
+| 5 | **`evidence_strength` was 20% of the utility sum.** Belief about an option is not part of its value; an option got better for having been researched. Also correlated with `precedent` (0.35 combined weight on near-identical evidence), violating the preferential independence a weighted sum assumes. | design review | High |
+| 6 | **`NOISE_BAND = 12` decided escalation and was, by its own comment, a guess.** | code read | High |
+| 7 | **Weights still had no sensitivity analysis.** v2 "fixed" the 5/5 finding by letting the caller pass a different map, which moves the problem rather than answering it. | code read | High |
+| 8 | **0-100 input against three anchor bands.** Nothing between 81 and 100 is distinguishable by any anchor, so the extra resolution was noise entering the sort key — then compensated for downstream by (6). | design review | High |
+| 9 | **Hand-substituted skill paths** where `${CLAUDE_SKILL_DIR}` exists, and no `allowed-tools`, so every invocation cost a permission prompt on a skill whose own plan flags friction as fatal. | Claude Code skills docs | Medium |
+| 10 | **`.decisions.log` was prescribed and unimplemented** — no writer, no schema, no reader, no assertion. "The record is the product" with no record. | grep | Medium |
+| 11 | **Injection guidance had no assertion behind it.** `scenarios.json` carried an injection case that no rule in `check()` could fail. | code read | Medium |
+| 12 | **`.gitignore`'s `scripts/eval/traces/` matched nothing** (slash-anchored to repo root), so live-eval output would have been committed into the skill. Plus `o["label"]` KeyError, `events.index()` equality collision, uncaught `TimeoutExpired`, no CI, no remote. | `git check-ignore` | Low |
+
+### Fixes shipped
+
+- [x] **Rank on the conservative bound** (`lo`). Unknowns contribute nothing;
+      an all-unknown option now sorts last at `0`. Fixes 1 and 2. Two regression
+      tests pin both, named for the behaviour they used to have.
+- [x] **Sub-scores restricted to the anchor midpoints** `{20, 60, 90}` or `null`,
+      with an error that names the bands. Fixes 8 at the source instead of
+      modelling it downstream.
+- [x] **`evidence` pulled out of the weighted sum**, carried per choice,
+      unweighted. Weights renormalised to `0.50 / 0.30 / 0.20`. Low or absent
+      evidence emits the `unverified-evidence` escalation reason — for which
+      SKILL.md now says a second opinion is worth nothing and only a tool call
+      counts. Fixes 5.
+- [x] **`NOISE_BAND` deleted, replaced by measured stability.** 400 draws
+      resampling the weights (Dirichlet around the declared vector) and jittering
+      each sub-score by one anchor band; `separated` is now "the top option
+      survives ≥90% of draws". Seeded, so the same input gives the same verdict.
+      Fixes 6 and 7 with one mechanism — and it is *derived from this option
+      set*, so a criterion on which everything scores alike cannot prop up a
+      recommendation.
+- [x] **`PERCENTISH` regex** covering `82%`, `82/100`, `8 out of 10`, bare
+      `0.82`, "confidence", "probability", "N points" — with `$0.02` explicitly
+      allowed so a real cost can still appear in a tradeoff clause. Four new
+      regression fixtures, one per disguise. Fixes 3.
+- [x] **The raw top-two gap and the stability fraction are no longer printed**,
+      even to the agent. Both were numbers one copy-paste away from a menu; the
+      table shows `robust / marginal / fragile` and the figures stay in `--json`.
+      Caught by the test suite, not by review.
+- [x] **`--live` rebuilt around what is observable.** Ground truth comes from
+      `$DECISION_PICKER_LOG` (the exact payload `rubric.py` received and the
+      verdict it returned — the step with all the variance, fully observable) and
+      from `--output-format stream-json` tool calls; the composed ask is retained
+      but labelled `self-reported` in every saved trace. `--repeat k` measures
+      recommendation self-agreement, which is the empirical quantity (6) was
+      guessing at. Protocol-break rate now reports a Wilson interval and gates on
+      its upper bound, because n=15 single runs cannot resolve a 10% threshold.
+      `TimeoutExpired` caught per run. Fixes 4.
+- [x] **`--log` implemented.** One JSONL line per decision: weights, every
+      sub-score, evidence, verdict, whether review ran, the user's pick, and
+      `diverged`. `$DECISION_PICKER_LOG` is the flag's default, which is what
+      makes the eval's ground truth free. Fixes 10.
+- [x] **Label sanitisation** — C0/C1 controls, zero-width characters, bidi
+      overrides, length cap. Not an injection defence (nothing in a prompt is);
+      it stops a candidate forging menu structure. Two new fixtures assert an
+      injection-shaped candidate is *surfaced* and *never executed*. Fixes 11.
+- [x] **`${CLAUDE_SKILL_DIR}` throughout, plus `allowed-tools`** pre-approving
+      the rubric invocation. The documented call is a heredoc so it prefix-matches
+      the rule. `claude plugin validate` passes; `allowed-tools` is in the
+      six-field Agent Skills spec set, so portability outside Claude Code holds.
+      Fixes 9.
+- [x] **CI** — both suites on Python 3.10 and 3.13, a stdlib-only import check
+      (the "no dependencies" claim, enforced), and `claude plugin validate`.
+      `.gitignore` patterns corrected and verified with `git check-ignore`.
+      Remaining minor fixes folded in. Fixes 12.
+
+Suites: **26 unit tests**, **24 fixture checks**, all green.
+
+### What the live harness found on its first run
+
+`--live` was smoke-tested (`--only hard-constraint-excludes-favourite --repeat 2`)
+and immediately earned its keep. Both runs invoked the skill, gated all three
+SaaS options on the hard constraint, and scored on the anchors. Run 2 failed
+`ESCALATION_WHEN_CONTESTED`, and the ground-truth log showed why: the rubric
+returned `unverified-evidence`, the agent did not escalate, and then **re-ran the
+rubric with a raised evidence level until the reason disappeared**.
+
+Neither the old checker nor a self-reported trace could have seen this — it is
+only visible because the script's own log is captured. Two fixes shipped:
+
+- [x] **`RESCORE_TO_DISMISS` rule.** A reason may not vanish between two rubric
+      events without an intervening `escalation.ran: true`. Two new fixtures: the
+      laundering trace, and the legitimate case where evidence was actually
+      gathered first.
+- [x] **SKILL.md forbids it explicitly**, in step 3 and in the anti-patterns.
+      The prose had a hole: "re-score, don't re-total" covered review arguments
+      but said nothing about editing an input to delete a warning.
+
+Also fixed: the trace schema did not say that `action.label` must be an exact
+option label, so an agent reporting a prose sentence tripped `USER_PICK_HONORED`.
+Spec tightened rather than the assertion loosened.
+
+### Still open
+
+- **A full `--live --repeat 3` pass across all 15 scenarios** has not been run —
+  one scenario has. The break-rate and self-agreement numbers are not yet real,
+  and the gate has not been exercised at n large enough to mean anything.
+- **Pairwise scoring** (recorded in v2 as raised 2/5, never resolved). Declined
+  for now: with ≤4 options all-pairs is 6 comparisons per criterion, and the
+  per-criterion cross-option pass already captures most of the halo benefit. The
+  decision is recorded here rather than left implicit.
+
 ## Non-goals
 
 - **A packaged state-machine controller with adapters** (luna's proposal). A

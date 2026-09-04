@@ -7,13 +7,28 @@ is a different quantity that nothing here estimates. Never render it to the user
 as a percentage — see SKILL.md, which carries the behavioral anchors that make
 the sub-scores mean anything at all.
 
-This module is the single source of truth for the criteria and their weights.
-Everything it does is deterministic; all the variance lives upstream in the
-sub-scores the model assigns, which is why the anchors matter more than the math.
+Three design decisions worth knowing before you read the code:
+
+1. **Ranking is on the conservative bound, not the point estimate.** An option
+   with unknown sub-scores used to be imputed at the mean of its known ones,
+   which let ignorance outrank evidence: an all-unknown option scored 50 and beat
+   a fully-grounded 45. Sorting on `lo` makes an unknown cost you, which is the
+   only direction that does not reward declining to look.
+
+2. **Sub-scores are the three band midpoints, not free 0-100.** The anchors in
+   SKILL.md define three levels per criterion. Accepting 87 invents 19 points of
+   resolution no anchor can justify, and that false precision lands straight in
+   the sort key.
+
+3. **`evidence_strength` is not weighted.** How much *you* verified is a property
+   of your knowledge, not of the option. Mixing it into the utility sum makes an
+   option better because it was researched. It is carried separately and gates
+   escalation: weak evidence means go get evidence, not dock points.
 
 Usage:
-    echo '{"choices": [{"label": "Redis", "scores": {...}}]}' | python3 rubric.py
-    python3 rubric.py --json < decision.json
+    echo '{"choices": [...]}' | python3 rubric.py
+    echo '{"choices": [...]}' | python3 rubric.py --json
+    echo '{"choices": [...], "pick": "Redis"}' | python3 rubric.py --log .decisions.log
 """
 
 from __future__ import annotations
@@ -21,32 +36,81 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
+import random
+import re
 import sys
+import unicodedata
 from dataclasses import dataclass, field
-from typing import Mapping
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Mapping, Sequence
 
+# Value criteria only. `evidence_strength` is deliberately absent — see the
+# module docstring. Weights are a software-architecture prior, not a law; pass a
+# different map when the decision has a different shape.
 DEFAULT_WEIGHTS: dict[str, float] = {
-    "fit_to_constraints": 0.40,
-    "reversibility": 0.25,
-    "evidence_strength": 0.20,
-    "precedent": 0.15,
+    "fit_to_constraints": 0.50,
+    "reversibility": 0.30,
+    "precedent": 0.20,
 }
 
-# Unanchored per-criterion ratings vary by roughly +/-15-20 between passes, which
-# propagates to a total sigma on the order of 8-12 points. A top-two gap smaller
-# than this is not a result, it is one noisy forward pass, so we call it a tie and
-# let the caller escalate. Erring toward "contested" is the safe direction.
-# ponytail: fixed constant, not a measured sigma. Replace with a real estimate
-# once the eval harness records score variance across repeated passes.
-NOISE_BAND = 12.0
+# The midpoints of the three anchor bands in SKILL.md (0-40, 41-80, 81-100).
+# Three anchors describe three levels; anything finer is a vibe with a decimal.
+LEVELS: tuple[int, ...] = (20, 60, 90)
 
 # Below this, no option is actually good — the field is weak, not the winner strong.
 WEAK_FIELD_TOTAL = 50.0
 
+# Separation is measured, not asserted. We resample the weights (Dirichlet around
+# the declared vector) and jitter each sub-score by one anchor band, then ask how
+# often the same option stays on top. This replaces a hardcoded noise margin with
+# a number derived from the two things that actually vary: weights nobody
+# measured, and ratings that move a band between passes.
+PERTURBATIONS = 400
+WEIGHT_CONCENTRATION = 40.0  # higher = weights wobble less
+BAND_FLIP_PROB = 0.25  # chance a sub-score moves one anchor band
+STABILITY_THRESHOLD = 0.90
+SEED = 20260904  # fixed: the same input must give the same verdict
+
+MAX_LABEL_LEN = 120
+
+# Candidate text is untrusted input that ends up rendered in a menu. Stripping
+# these is not an injection defence — nothing here can make a model ignore
+# instructions — but it stops a candidate from forging menu structure with
+# newlines, hiding text behind zero-width characters, or reordering the rendered
+# label with bidi overrides. Written as escapes on purpose: a literal invisible
+# character in source is exactly what this is defending against.
+_CONTROL_RE = re.compile(
+    "["
+    "\x00-\x1f\x7f-\x9f"       # C0 and C1 controls, incl. newline and tab
+    "\u00a0\u00ad"              # no-break space, soft hyphen
+    "\u200b-\u200f"             # zero-width and directional marks
+    "\u2028\u2029"              # line and paragraph separators
+    "\u202a-\u202e\u2066-\u2069"  # bidi overrides and isolates
+    "\ufeff"                    # zero-width no-break space / BOM
+    "]"
+)
+
+
+def sanitise_label(raw: object) -> str:
+    """Normalise a candidate label for safe rendering. Returns '' if it is empty."""
+    text = unicodedata.normalize("NFC", str(raw))
+    text = _CONTROL_RE.sub(" ", text)
+    text = " ".join(text.split())
+    if len(text) > MAX_LABEL_LEN:
+        text = text[: MAX_LABEL_LEN - 1].rstrip() + "…"
+    return text
+
 
 @dataclass(frozen=True)
 class Score:
-    """Point estimate plus the bounds implied by any `unknown` sub-scores."""
+    """Conservative bound, point estimate, and optimistic bound.
+
+    `lo` is the ranking key: unknown criteria contribute nothing. `point`
+    renormalises over the known criteria and exists only for display — it is the
+    optimistic reading and must never decide an order.
+    """
 
     point: float
     lo: float
@@ -62,6 +126,7 @@ class Score:
 class Ranked:
     label: str
     score: Score | None  # None when the option was gated out as infeasible
+    evidence: float | None = None
     feasible: bool = True
     note: str = ""
 
@@ -73,10 +138,16 @@ class Verdict:
     gap: float | None = None
     band: str = ""
     separated: bool = False
+    stability: float | None = None
+    reasons: list[str] = field(default_factory=list)
 
     @property
     def recommended(self) -> Ranked | None:
         return self.ranked[0] if self.ranked else None
+
+    @property
+    def escalate(self) -> bool:
+        return bool(self.reasons)
 
 
 def _validate_weights(weights: Mapping[str, float]) -> dict[str, float]:
@@ -87,19 +158,24 @@ def _validate_weights(weights: Mapping[str, float]) -> dict[str, float]:
             raise ValueError(f"weight {name!r}: expected a number, got {w!r}")
         if not math.isfinite(w) or w < 0:
             raise ValueError(f"weight {name!r}: expected a finite non-negative number, got {w!r}")
+    if "evidence_strength" in weights:
+        raise ValueError(
+            "evidence_strength is not a value criterion and cannot be weighted; "
+            "pass it per choice as 'evidence' — it gates escalation instead"
+        )
     total = sum(weights.values())
     if not math.isclose(total, 1.0, abs_tol=1e-9):
         raise ValueError(f"weights must sum to 1.0, got {total!r} from {sorted(weights)}")
     return dict(weights)
 
 
-def _validate_sub_score(criterion: str, value: object) -> float | None:
-    """One sub-score: 0-100, or None meaning 'not established'."""
+def _validate_level(criterion: str, value: object) -> float | None:
+    """One sub-score: an anchor band midpoint, or None meaning 'not established'."""
     if value is None:
         return None
     # bool is an int subclass, so this check must come first.
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError(f"{criterion!r}: expected a number 0-100 or null, got {value!r}")
+        raise ValueError(f"{criterion!r}: expected one of {list(LEVELS)} or null, got {value!r}")
     v = float(value)
     if not math.isfinite(v):
         raise ValueError(f"{criterion!r}: expected a finite number, got {value!r}")
@@ -108,51 +184,101 @@ def _validate_sub_score(criterion: str, value: object) -> float | None:
             f"{criterion!r}: {value!r} looks like a 0-1 fraction; this scale is 0-100. "
             "Pass the intended value explicitly rather than relying on a rescale."
         )
-    if not 0.0 <= v <= 100.0:
-        raise ValueError(f"{criterion!r}: expected 0 <= score <= 100, got {value!r}")
+    if v not in LEVELS:
+        raise ValueError(
+            f"{criterion!r}: expected one of {list(LEVELS)} or null, got {value!r}. "
+            "These are the midpoints of the three anchor bands in SKILL.md; pick the "
+            "band whose description matches and pass its midpoint. A finer number "
+            "claims resolution the anchors do not have."
+        )
     return v
+
+
+def _bounds(clean: Mapping[str, float | None], w: Mapping[str, float]) -> tuple[float, float, float]:
+    """(lo, point, hi) for one option. Weights sum to 1, so these are 0-100."""
+    lo = sum(v * w[k] for k, v in clean.items() if v is not None)
+    known_weight = sum(w[k] for k, v in clean.items() if v is not None)
+    unknown_weight = sum(w[k] for k, v in clean.items() if v is None)
+    point = lo / known_weight if known_weight else 0.0
+    return lo, point, lo + unknown_weight * 100.0
 
 
 def score_choice(
     sub_scores: Mapping[str, object],
     weights: Mapping[str, float] | None = None,
 ) -> Score:
-    """Weighted total from per-criterion sub-scores (0-100 each, or None if unknown).
+    """Weighted total from per-criterion sub-scores (an anchor level each, or None).
 
-    An unknown sub-score is not silently treated as average. The point estimate
-    renormalises over the criteria that *are* known, and `lo`/`hi` carry the
-    bounds implied by the unknown ones — so a decision resting on something we
-    never established shows up as an overlap instead of a confident total.
+    An unknown sub-score is not imputed. It contributes 0 to `lo` — the ranking
+    key — and its full weight to `hi`, so an option resting on something never
+    established has to win on what is actually known.
     """
     w = _validate_weights(weights if weights is not None else DEFAULT_WEIGHTS)
-
-    unexpected = sorted(set(sub_scores) - set(w))
-    if unexpected:
-        raise ValueError(f"unknown criteria: {unexpected} (expected {sorted(w)})")
-    missing = sorted(set(w) - set(sub_scores))
-    if missing:
-        raise ValueError(f"missing sub-scores: {missing}")
-
-    clean = {k: _validate_sub_score(k, sub_scores[k]) for k in w}
-    unknown = tuple(sorted(k for k, v in clean.items() if v is None))
-
-    known_weight = sum(w[k] for k, v in clean.items() if v is not None)
-    base = sum(v * w[k] for k, v in clean.items() if v is not None)
-    unknown_weight = sum(w[k] for k in unknown)
-
-    # Weights sum to 1, so `base` is already on the 0-100 scale; dividing by the
-    # known weight renormalises when some criteria are unknown.
-    point = base / known_weight if known_weight else 50.0
+    clean = _clean_sub_scores(sub_scores, w)
+    lo, point, hi = _bounds(clean, w)
     return Score(
         point=round(point, 1),
-        lo=round(base, 1),
-        hi=round(base + unknown_weight * 100.0, 1),
-        unknown=unknown,
+        lo=round(lo, 1),
+        hi=round(hi, 1),
+        unknown=tuple(sorted(k for k, v in clean.items() if v is None)),
     )
 
 
+def _clean_sub_scores(sub_scores: Mapping[str, object], w: Mapping[str, float]) -> dict[str, float | None]:
+    unexpected = sorted(set(sub_scores) - set(w))
+    if unexpected:
+        hint = ""
+        if "evidence_strength" in unexpected:
+            hint = " — pass evidence_strength per choice as 'evidence', not inside 'scores'"
+        raise ValueError(f"unknown criteria: {unexpected} (expected {sorted(w)}){hint}")
+    missing = sorted(set(w) - set(sub_scores))
+    if missing:
+        raise ValueError(f"missing sub-scores: {missing}")
+    return {k: _validate_level(k, sub_scores[k]) for k in w}
+
+
+def _stability(
+    cleaned: Sequence[tuple[str, dict[str, float | None]]],
+    w: Mapping[str, float],
+    top_label: str,
+) -> float:
+    """How often `top_label` survives resampled weights and one-band rating jitter.
+
+    This is the honest replacement for a fixed noise margin: it is computed from
+    the declared weights and the actual spread of this option set, so a criterion
+    on which every option scores the same cannot prop up a recommendation.
+    """
+    if len(cleaned) < 2:
+        return 1.0
+    rng = random.Random(SEED)
+    names = list(w)
+    alphas = [max(w[k] * WEIGHT_CONCENTRATION, 1e-3) for k in names]
+    survived = 0
+
+    for _ in range(PERTURBATIONS):
+        draws = [rng.gammavariate(a, 1.0) for a in alphas]
+        total = sum(draws) or 1.0
+        pw = {k: d / total for k, d in zip(names, draws)}
+
+        best_label, best_lo = None, -1.0
+        for label, clean in cleaned:
+            jittered: dict[str, float | None] = {}
+            for k, v in clean.items():
+                if v is not None and rng.random() < BAND_FLIP_PROB:
+                    i = LEVELS.index(int(v)) + (1 if rng.random() < 0.5 else -1)
+                    v = float(LEVELS[min(max(i, 0), len(LEVELS) - 1)])
+                jittered[k] = v
+            lo = _bounds(jittered, pw)[0]
+            if lo > best_lo:
+                best_label, best_lo = label, lo
+        if best_label == top_label:
+            survived += 1
+
+    return round(survived / PERTURBATIONS, 3)
+
+
 def rank_choices(
-    choices: list[Mapping[str, object]],
+    choices: Sequence[Mapping[str, object]],
     weights: Mapping[str, float] | None = None,
 ) -> Verdict:
     """Rank feasible choices; gate infeasible ones out *before* weighting.
@@ -161,73 +287,131 @@ def rank_choices(
     compensated back into contention by scoring well on reversibility and
     precedent, so it never enters the ranking — it is reported separately.
     """
+    w = _validate_weights(weights if weights is not None else DEFAULT_WEIGHTS)
     ranked: list[Ranked] = []
     excluded: list[Ranked] = []
+    cleaned: list[tuple[str, dict[str, float | None]]] = []
     seen: set[str] = set()
 
     for raw in choices:
-        label = str(raw.get("label", "")).strip()
+        label = sanitise_label(raw.get("label", ""))
         if not label:
             raise ValueError(f"every choice needs a non-empty label: {raw!r}")
         if label in seen:
             raise ValueError(f"duplicate choice label: {label!r}")
         seen.add(label)
 
-        note = str(raw.get("note", ""))
+        note = sanitise_label(raw.get("note", ""))
         if raw.get("feasible", True) is False:
             excluded.append(Ranked(label=label, score=None, feasible=False, note=note))
             continue
 
+        if "evidence" not in raw:
+            raise ValueError(
+                f"{label!r}: every feasible choice needs an 'evidence' level "
+                f"(one of {list(LEVELS)}, or null if you never established it)"
+            )
+        evidence = _validate_level("evidence", raw["evidence"])
+
         scores = raw.get("scores")
         if not isinstance(scores, Mapping):
-            raise ValueError(f"{label!r}: 'scores' must be an object of criterion -> 0-100 or null")
-        ranked.append(Ranked(label=label, score=score_choice(scores, weights), note=note))
+            raise ValueError(f"{label!r}: 'scores' must be an object of criterion -> anchor level or null")
+        clean = _clean_sub_scores(scores, w)
+        lo, point, hi = _bounds(clean, w)
+        cleaned.append((label, clean))
+        ranked.append(
+            Ranked(
+                label=label,
+                score=Score(
+                    point=round(point, 1),
+                    lo=round(lo, 1),
+                    hi=round(hi, 1),
+                    unknown=tuple(sorted(k for k, v in clean.items() if v is None)),
+                ),
+                evidence=evidence,
+                note=note,
+            )
+        )
 
-    ranked.sort(key=lambda r: r.score.point, reverse=True)  # type: ignore[union-attr]
+    # Rank on the conservative bound. `point` only breaks ties, and only for a
+    # stable display order — it must never decide which option is recommended.
+    ranked.sort(key=lambda r: (r.score.lo, r.score.point, r.label), reverse=True)  # type: ignore[union-attr]
 
     verdict = Verdict(ranked=ranked, excluded=excluded)
     if not ranked:
         verdict.band = "No feasible option"
-    elif len(ranked) == 1:
+        verdict.reasons = ["no-feasible-option"]
+        return verdict
+
+    top = ranked[0]
+    assert top.score is not None
+    verdict.stability = _stability(cleaned, w, top.label)
+    verdict.separated = verdict.stability >= STABILITY_THRESHOLD
+
+    if len(ranked) == 1:
         verdict.band = "Only feasible option"
-        verdict.separated = True
     else:
-        top, second = ranked[0].score, ranked[1].score
-        assert top is not None and second is not None
-        verdict.gap = round(top.lo - second.hi, 1)
-        verdict.separated = verdict.gap >= NOISE_BAND
-        if top.point < WEAK_FIELD_TOTAL:
+        second = ranked[1].score
+        assert second is not None
+        verdict.gap = round(top.score.lo - second.lo, 1)
+        if top.score.point < WEAK_FIELD_TOTAL:
             verdict.band = "Weak field"
         elif verdict.separated:
             verdict.band = "Separated"
         else:
             verdict.band = "Contested"
+
+    if not verdict.separated:
+        verdict.reasons.append("not-separable")
+    if verdict.band == "Weak field":
+        verdict.reasons.append("weak-field")
+    if top.evidence is None or top.evidence <= LEVELS[0]:
+        verdict.reasons.append("unverified-evidence")
     return verdict
 
 
+def stability_band(stability: float) -> str:
+    """Ordinal reading of the stability figure.
+
+    Even the agent-facing table gets a band rather than the raw fraction. A
+    number in front of a model is a number that ends up in an option
+    description; the exact figure stays in --json where tooling can have it.
+    """
+    if stability >= STABILITY_THRESHOLD:
+        return "robust"
+    return "marginal" if stability >= 0.70 else "fragile"
+
+
 def format_table(verdict: Verdict) -> str:
-    """Plain-text ranking for the agent to read. Deliberately no percent signs."""
+    """Plain-text ranking for the agent to read. Deliberately no percentages."""
     lines: list[str] = []
     for i, r in enumerate(verdict.ranked, 1):
         s = r.score
         assert s is not None
         bounds = "" if s.certain else f"  [{s.lo}-{s.hi}, unknown: {', '.join(s.unknown)}]"
-        lines.append(f"{i}. {r.label}  score {s.point}/100{bounds}{('  — ' + r.note) if r.note else ''}")
+        ev = "unverified" if r.evidence is None else f"evidence {r.evidence:g}"
+        lines.append(f"{i}. {r.label}  score {s.lo:g}{bounds}  ({ev}){('  — ' + r.note) if r.note else ''}")
     for r in verdict.excluded:
-        why = r.note or "violates a stated hard constraint"
-        lines.append(f"--. {r.label}  EXCLUDED — {why}")
+        lines.append(f"--. {r.label}  EXCLUDED — {r.note or 'violates a stated hard constraint'}")
 
     lines.append("")
-    if verdict.gap is not None:
-        lines.append(f"top-two gap: {verdict.gap} pts (noise band {NOISE_BAND})")
+    # The raw top-two gap is deliberately not printed. It is the number most
+    # likely to be copied into an option description, and `stability` already
+    # answers the only question it was ever asked: is this lead real? The value
+    # stays in --json for tooling.
+    if verdict.stability is not None:
+        lines.append(
+            f"separation: {stability_band(verdict.stability)} — how often this option stays "
+            "on top under resampled weights and one-band rating noise"
+        )
     lines.append(f"band: {verdict.band}")
+    if verdict.escalate:
+        lines.append(f"ESCALATE — {', '.join(verdict.reasons)}")
+    else:
+        lines.append("separated: yes — a recommendation is defensible")
     lines.append(
-        "separated: yes — a recommendation is defensible"
-        if verdict.separated
-        else "separated: NO — treat the top two as tied and escalate"
-    )
-    lines.append(
-        "NOTE: utility score, not a confidence probability. Never show it to the user as a percentage."
+        "NOTE: utility points on the anchor scale, not a confidence probability. "
+        "Show the user the band, never the number."
     )
     return "\n".join(lines)
 
@@ -237,10 +421,12 @@ def _verdict_to_dict(v: Verdict) -> dict:
         d: dict = {"label": r.label, "feasible": r.feasible, "note": r.note}
         if r.score is not None:
             d |= {
+                "rank_key": r.score.lo,
                 "point": r.score.point,
                 "lo": r.score.lo,
                 "hi": r.score.hi,
                 "unknown": list(r.score.unknown),
+                "evidence": r.evidence,
             }
         return d
 
@@ -250,13 +436,58 @@ def _verdict_to_dict(v: Verdict) -> dict:
         "gap": v.gap,
         "band": v.band,
         "separated": v.separated,
+        "stability": v.stability,
+        "escalate": v.escalate,
+        "reasons": v.reasons,
         "recommended": v.recommended.label if v.recommended else None,
     }
+
+
+def append_log(path: Path, payload: Mapping[str, object], verdict: Verdict) -> None:
+    """One JSONL line per decision. For a decision aid, the record is the product.
+
+    `pick` absent means this is the pre-answer ranking; present means the user has
+    answered and this line closes the decision out. Both kinds are useful: the
+    pair is the only way anyone later learns whether the recommendations were any
+    good, or whether users routinely overrode them.
+    """
+    pick = payload.get("pick")
+    pick = sanitise_label(pick) if pick is not None else None
+    recommended = verdict.recommended.label if verdict.recommended else None
+    record = {
+        "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "kind": "decision" if pick is not None else "ranking",
+        "weights": dict(payload.get("weights") or DEFAULT_WEIGHTS),  # type: ignore[arg-type]
+        "choices": [
+            {
+                "label": sanitise_label(c.get("label", "")),
+                "scores": c.get("scores"),
+                "evidence": c.get("evidence"),
+                "feasible": c.get("feasible", True),
+            }
+            for c in payload.get("choices", [])  # type: ignore[union-attr]
+        ],
+        "verdict": _verdict_to_dict(verdict),
+        "escalated": payload.get("escalated"),
+        "pick": pick,
+        "diverged": None if pick is None else pick != recommended,
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--json", action="store_true", help="emit JSON instead of a table")
+    ap.add_argument(
+        "--log",
+        nargs="?",
+        const=".decisions.log",
+        default=os.environ.get("DECISION_PICKER_LOG"),
+        help="append a JSONL decision record here (default .decisions.log; "
+        "also set by $DECISION_PICKER_LOG)",
+    )
     args = ap.parse_args(argv)
 
     try:
@@ -267,10 +498,13 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         verdict = rank_choices(payload["choices"], payload.get("weights"))
-    except (KeyError, ValueError) as exc:
+    except (KeyError, TypeError, ValueError) as exc:
         # Named, actionable errors: the agent reads this and corrects its own input.
         print(f"error: {exc}", file=sys.stderr)
         return 1
+
+    if args.log:
+        append_log(Path(args.log), payload, verdict)
 
     print(json.dumps(_verdict_to_dict(verdict), indent=2) if args.json else format_table(verdict))
     return 0

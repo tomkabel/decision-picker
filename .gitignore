@@ -1,3 +1,11 @@
 __pycache__/
 *.pyc
-scripts/eval/traces/
+
+# Live-eval output. The old pattern was `scripts/eval/traces/`, which is anchored
+# to this file's directory and so matched nothing — traces were committed.
+# --live now writes to a temp dir by default; these cover an explicit --out.
+dp-eval-*/
+**/eval/traces/
+
+# Decision records are per-project data, not source.
+.decisions.log

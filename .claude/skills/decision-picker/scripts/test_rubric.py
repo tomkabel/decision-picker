@@ -1,26 +1,33 @@
 #!/usr/bin/env python3
 """Tests for rubric.py. No framework: `python3 scripts/test_rubric.py`.
 
-These test the validation branches and the gating rules — the places where a
-malformed model output could silently corrupt a ranking. The old demo()
-asserted that a hardcoded winner won on its own fixture, which is a tautology.
+These cover the validation branches, the gating rules, and the two ranking bugs
+that made the module claim the opposite of what it did — the places where a
+malformed or merely incomplete model output silently corrupts a ranking.
 """
 
 import json
+import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(HERE / "eval"))
 
+from check_trace import looks_like_a_percentage  # noqa: E402  # pyright: ignore[reportMissingImports]
 from rubric import (  # noqa: E402
     DEFAULT_WEIGHTS,
-    NOISE_BAND,
+    LEVELS,
+    STABILITY_THRESHOLD,
     rank_choices,
+    sanitise_label,
     score_choice,
 )
 
-HERE = Path(__file__).resolve().parent
+LOW, MID, HIGH = LEVELS
 
 
 def raises(fn, *, containing: str) -> None:
@@ -33,9 +40,18 @@ def raises(fn, *, containing: str) -> None:
 
 
 def full(**over) -> dict:
-    base = {k: 50 for k in DEFAULT_WEIGHTS}
+    base = {k: MID for k in DEFAULT_WEIGHTS}
     base.update(over)
     return base
+
+
+def choice(label: str, evidence: int | None = MID, **over) -> dict:
+    return {"label": label, "evidence": evidence, "scores": full(**over)}
+
+
+# --------------------------------------------------------------------------- #
+# weights
+# --------------------------------------------------------------------------- #
 
 
 def test_weights_sum_to_one() -> None:
@@ -43,22 +59,46 @@ def test_weights_sum_to_one() -> None:
     raises(lambda: score_choice(full(), weights={"a": 0.5, "b": 0.2}), containing="sum to 1.0")
 
 
+def test_evidence_cannot_be_weighted() -> None:
+    """Belief about an option is not part of its value. Keep them separate."""
+    w = {"fit_to_constraints": 0.5, "reversibility": 0.3, "evidence_strength": 0.2}
+    raises(lambda: score_choice(full(), weights=w), containing="not a value criterion")
+
+
+def test_custom_weights() -> None:
+    """The default weights are a default, not a law."""
+    w = {"fit_to_constraints": 0.8, "reversibility": 0.1, "precedent": 0.1}
+    v = rank_choices([choice("A", **{"fit_to_constraints": HIGH})], weights=w)
+    assert v.recommended is not None and v.recommended.score is not None
+    assert v.recommended.score.lo == round(HIGH * 0.8 + MID * 0.2, 1)
+
+
+# --------------------------------------------------------------------------- #
+# sub-score validation
+# --------------------------------------------------------------------------- #
+
+
+def test_rejects_off_anchor_precision() -> None:
+    """Three anchor bands describe three levels; 87 invents resolution."""
+    raises(lambda: score_choice(full(reversibility=87)), containing="anchor bands")
+    raises(lambda: score_choice(full(reversibility=0)), containing="anchor bands")
+    for level in LEVELS:
+        score_choice(full(reversibility=level))
+
+
 def test_rejects_out_of_range() -> None:
-    raises(lambda: score_choice(full(reversibility=150)), containing="0 <= score <= 100")
-    raises(lambda: score_choice(full(reversibility=-20)), containing="0 <= score <= 100")
+    raises(lambda: score_choice(full(reversibility=150)), containing="expected one of")
+    raises(lambda: score_choice(full(reversibility=-20)), containing="expected one of")
 
 
 def test_rejects_fraction_instead_of_percent() -> None:
     # The headline silent-corruption bug: 0.9 used to score a confident-looking total.
     raises(lambda: score_choice(full(fit_to_constraints=0.9)), containing="0-1 fraction")
-    # 0 and 1 are legitimate on a 0-100 scale and must still pass.
-    assert score_choice(full(fit_to_constraints=0)).point == 30.0
-    assert score_choice(full(fit_to_constraints=1)).point == 30.4
 
 
 def test_rejects_non_numbers() -> None:
-    raises(lambda: score_choice(full(precedent=True)), containing="expected a number")
-    raises(lambda: score_choice(full(precedent="80")), containing="expected a number")
+    raises(lambda: score_choice(full(precedent=True)), containing="expected one of")
+    raises(lambda: score_choice(full(precedent="90")), containing="expected one of")
     raises(lambda: score_choice(full(precedent=float("nan"))), containing="finite")
     raises(lambda: score_choice(full(precedent=float("inf"))), containing="finite")
 
@@ -67,112 +107,211 @@ def test_rejects_wrong_keys() -> None:
     bad = full()
     bad["reversibilty"] = bad.pop("reversibility")  # typo'd duplicate
     raises(lambda: score_choice(bad), containing="unknown criteria")
-    missing = {k: 50 for k in list(DEFAULT_WEIGHTS)[:3]}
-    raises(lambda: score_choice(missing), containing="missing sub-scores")
+    raises(lambda: score_choice({k: MID for k in list(DEFAULT_WEIGHTS)[:2]}),
+           containing="missing sub-scores")
 
 
-def test_unknown_is_not_treated_as_average() -> None:
-    s = score_choice(full(evidence_strength=None))
-    assert s.unknown == ("evidence_strength",)
-    assert not s.certain
-    # bounds span exactly the unknown criterion's weight
-    assert round(s.hi - s.lo, 6) == round(DEFAULT_WEIGHTS["evidence_strength"] * 100, 6)
+def test_evidence_in_scores_gets_a_pointed_error() -> None:
+    raises(lambda: score_choice(full(evidence_strength=MID)), containing="pass evidence_strength")
 
 
-def test_unknown_blocks_separation() -> None:
-    """A decision resting on something never established must not look decisive."""
+def test_evidence_is_required_per_choice() -> None:
+    raises(lambda: rank_choices([{"label": "A", "scores": full()}]), containing="'evidence' level")
+    raises(lambda: rank_choices([{"label": "A", "evidence": 55, "scores": full()}]),
+           containing="anchor bands")
+    # ...but an excluded option needs no evidence: it was never scored.
+    rank_choices([{"label": "A", "evidence": MID, "scores": full()},
+                  {"label": "B", "feasible": False, "note": "hard constraint"}])
+
+
+# --------------------------------------------------------------------------- #
+# the two ranking bugs
+# --------------------------------------------------------------------------- #
+
+
+def test_unknown_does_not_outrank_evidence() -> None:
+    """REGRESSION: an all-unknown option used to score 50 and beat a grounded 45.
+
+    Imputing an unknown at the mean of the knowns rewards not looking. The rank
+    key is the conservative bound, so an unknown now costs what it should.
+    """
     v = rank_choices([
-        {"label": "A", "scores": full(fit_to_constraints=90, evidence_strength=None)},
-        {"label": "B", "scores": full(fit_to_constraints=40)},
+        {"label": "NoInfo", "evidence": None,
+         "scores": {k: None for k in DEFAULT_WEIGHTS}},
+        choice("Known", evidence=MID),
     ])
-    assert v.recommended is not None and v.recommended.label == "A"
-    assert not v.separated, "unknown evidence should keep the call contested"
-    assert v.band == "Contested"
+    assert v.recommended is not None and v.recommended.label == "Known"
+    assert v.ranked[-1].label == "NoInfo"
+    assert v.ranked[-1].score is not None and v.ranked[-1].score.lo == 0.0
+
+
+def test_partial_unknown_ranks_on_what_is_known() -> None:
+    """REGRESSION: scoring high on two criteria and skipping the rest used to
+    renormalise to a perfect total and beat a fully-known option outright."""
+    v = rank_choices([
+        {"label": "Gappy", "evidence": MID,
+         "scores": full(fit_to_constraints=HIGH, reversibility=HIGH, precedent=None)},
+        choice("Complete", **{k: HIGH for k in DEFAULT_WEIGHTS}),
+    ])
+    assert v.recommended is not None and v.recommended.label == "Complete"
+
+
+def test_unknown_widens_the_bounds() -> None:
+    s = score_choice(full(precedent=None))
+    assert s.unknown == ("precedent",) and not s.certain
+    assert round(s.hi - s.lo, 6) == round(DEFAULT_WEIGHTS["precedent"] * 100, 6)
+
+
+# --------------------------------------------------------------------------- #
+# gating and bands
+# --------------------------------------------------------------------------- #
 
 
 def test_infeasible_is_gated_not_penalised() -> None:
-    """The core MCDA fix: a hard-constraint violation cannot be outscored back in."""
+    """The core MCDA rule: a hard-constraint violation cannot be outscored back in."""
     v = rank_choices([
-        {"label": "Violates", "feasible": False, "note": "no on-prem build", "scores": full(fit_to_constraints=100)},
-        {"label": "Ok", "scores": full(fit_to_constraints=10)},
+        {"label": "Violates", "feasible": False, "note": "no on-prem build"},
+        choice("Ok", evidence=MID, fit_to_constraints=LOW),
     ])
     assert [r.label for r in v.ranked] == ["Ok"]
     assert [r.label for r in v.excluded] == ["Violates"]
-    assert v.recommended is not None and v.recommended.label == "Ok"
     assert v.band == "Only feasible option"
 
 
 def test_no_feasible_option() -> None:
-    v = rank_choices([{"label": "X", "feasible": False, "scores": full()}])
+    v = rank_choices([{"label": "X", "feasible": False}])
     assert v.recommended is None
-    assert v.band == "No feasible option"
-
-
-def test_contested_inside_noise_band() -> None:
-    v = rank_choices([
-        {"label": "A", "scores": full(fit_to_constraints=60)},
-        {"label": "B", "scores": full(fit_to_constraints=50)},
-    ])
-    assert v.gap is not None and 0 < v.gap < NOISE_BAND
-    assert not v.separated and v.band == "Contested"
-
-
-def test_separated_outside_noise_band() -> None:
-    v = rank_choices([
-        {"label": "A", "scores": full(fit_to_constraints=100, reversibility=100)},
-        {"label": "B", "scores": full(fit_to_constraints=10, reversibility=10)},
-    ])
-    assert v.separated and v.band == "Separated"
+    assert v.band == "No feasible option" and v.escalate
 
 
 def test_weak_field() -> None:
-    v = rank_choices([
-        {"label": "A", "scores": full(**{k: 20 for k in DEFAULT_WEIGHTS})},
-        {"label": "B", "scores": full(**{k: 5 for k in DEFAULT_WEIGHTS})},
-    ])
+    v = rank_choices([choice("A", **{k: LOW for k in DEFAULT_WEIGHTS}),
+                      choice("B", **{k: LOW for k in DEFAULT_WEIGHTS})])
     assert v.band == "Weak field", "a weak winner must not read as a strong lead"
+    assert "weak-field" in v.reasons
 
 
 def test_duplicate_and_empty_labels() -> None:
-    raises(lambda: rank_choices([{"label": "A", "scores": full()}, {"label": "A", "scores": full()}]),
-           containing="duplicate")
-    raises(lambda: rank_choices([{"label": "  ", "scores": full()}]), containing="non-empty label")
+    raises(lambda: rank_choices([choice("A"), choice("A")]), containing="duplicate")
+    raises(lambda: rank_choices([choice("  ")]), containing="non-empty label")
 
 
-def test_custom_weights() -> None:
-    """Phase 7: the default weights are a default, not a law."""
-    w = {"fit_to_constraints": 0.7, "reversibility": 0.1, "evidence_strength": 0.1, "precedent": 0.1}
-    v = rank_choices([{"label": "A", "scores": full(fit_to_constraints=100)}], weights=w)
-    assert v.recommended is not None and v.recommended.score is not None
-    assert v.recommended.score.point == 85.0
+# --------------------------------------------------------------------------- #
+# stability: the measured replacement for a hardcoded noise band
+# --------------------------------------------------------------------------- #
 
 
-def test_cli_roundtrip_and_no_percent_in_output() -> None:
-    payload = {"choices": [
-        {"label": "Redis", "scores": full(fit_to_constraints=90, precedent=95)},
-        {"label": "File-based", "scores": full(fit_to_constraints=20)},
-    ]}
-    for flags in ([], ["--json"]):
-        out = subprocess.run(
-            [sys.executable, str(HERE / "rubric.py"), *flags],
-            input=json.dumps(payload), capture_output=True, text=True, check=True,
-        ).stdout
-        assert "Redis" in out
-        if flags:
-            assert json.loads(out)["recommended"] == "Redis"
-        else:
-            # Phase 4: the percent sign must never reach a rendered surface.
-            assert "%" not in out, f"rubric output leaked a percent sign:\n{out}"
+def test_stability_separates_a_dominant_option() -> None:
+    v = rank_choices([choice("A", **{k: HIGH for k in DEFAULT_WEIGHTS}),
+                      choice("B", **{k: LOW for k in DEFAULT_WEIGHTS})])
+    assert v.stability is not None and v.stability >= STABILITY_THRESHOLD
+    assert v.separated and v.band == "Separated" and not v.escalate
+
+
+def test_stability_flags_a_near_tie() -> None:
+    """A lead that only survives one weighting is not a lead."""
+    v = rank_choices([
+        choice("A", fit_to_constraints=HIGH, reversibility=LOW, precedent=LOW),
+        choice("B", fit_to_constraints=MID, reversibility=HIGH, precedent=HIGH),
+    ])
+    assert v.stability is not None and v.stability < STABILITY_THRESHOLD
+    assert not v.separated and "not-separable" in v.reasons
+
+
+def test_stability_is_deterministic() -> None:
+    """Same input, same verdict — a decision aid that wobbles is not an aid."""
+    pair = [choice("A", fit_to_constraints=HIGH), choice("B", reversibility=HIGH)]
+    assert rank_choices(pair).stability == rank_choices(pair).stability
+
+
+def test_unverified_evidence_forces_escalation() -> None:
+    """Weak evidence means go get evidence, not dock points."""
+    v = rank_choices([choice("A", evidence=LOW, **{k: HIGH for k in DEFAULT_WEIGHTS}),
+                      choice("B", evidence=HIGH, **{k: LOW for k in DEFAULT_WEIGHTS})])
+    assert v.recommended is not None and v.recommended.label == "A"
+    assert v.separated, "evidence must not move the ranking"
+    assert "unverified-evidence" in v.reasons and v.escalate
+
+    v2 = rank_choices([choice("A", evidence=None, **{k: HIGH for k in DEFAULT_WEIGHTS}),
+                       choice("B", evidence=HIGH, **{k: LOW for k in DEFAULT_WEIGHTS})])
+    assert "unverified-evidence" in v2.reasons
+
+
+# --------------------------------------------------------------------------- #
+# untrusted candidate text
+# --------------------------------------------------------------------------- #
+
+
+def test_labels_are_sanitised() -> None:
+    """Candidate text is data. It must not be able to forge menu structure."""
+    assert sanitise_label("Blue-green\ndeploy\r\nrm -rf /") == "Blue-green deploy rm -rf /"
+    assert sanitise_label("a\u200bb") == "a b"
+    assert sanitise_label("A\u202eB") == "A B"
+    long = sanitise_label("x" * 500)
+    assert len(long) <= 120 and long.endswith("…")
+    v = rank_choices([choice("A\nB"), choice("C")])
+    assert {r.label for r in v.ranked} == {"A B", "C"}
+
+
+# --------------------------------------------------------------------------- #
+# CLI
+# --------------------------------------------------------------------------- #
+
+
+def cli(payload: dict, *flags: str, env: dict | None = None) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, str(HERE / "rubric.py"), *flags],
+        input=json.dumps(payload), capture_output=True, text=True,
+        env=(os.environ | env) if env else None,
+    )
+
+
+def test_cli_roundtrip_and_no_percentage_shaped_output() -> None:
+    payload = {"choices": [choice("Redis", fit_to_constraints=HIGH, precedent=HIGH),
+                           choice("File-based", fit_to_constraints=LOW)]}
+    table = cli(payload)
+    assert table.returncode == 0 and "Redis" in table.stdout
+    for line in table.stdout.splitlines():
+        # The footer is allowed to name the anti-pattern it is warning about.
+        if line.startswith("NOTE:"):
+            continue
+        assert not looks_like_a_percentage(line), f"score leaked as a number: {line!r}"
+    blob = json.loads(cli(payload, "--json").stdout)
+    assert blob["recommended"] == "Redis" and blob["stability"] is not None
 
 
 def test_cli_reports_bad_input_actionably() -> None:
-    bad = {"choices": [{"label": "A", "scores": full(reversibility=150)}]}
-    proc = subprocess.run(
-        [sys.executable, str(HERE / "rubric.py")],
-        input=json.dumps(bad), capture_output=True, text=True,
-    )
+    proc = cli({"choices": [choice("A", reversibility=150)]})
     assert proc.returncode == 1
-    assert "reversibility" in proc.stderr and "0 <= score <= 100" in proc.stderr
+    assert "reversibility" in proc.stderr and "expected one of" in proc.stderr
+
+
+def test_cli_rejects_malformed_json() -> None:
+    proc = subprocess.run([sys.executable, str(HERE / "rubric.py")],
+                          input="not json", capture_output=True, text=True)
+    assert proc.returncode == 2 and "not valid JSON" in proc.stderr
+
+
+def test_log_records_the_decision_and_divergence() -> None:
+    """For a decision aid the record is the product; assert it actually exists."""
+    with tempfile.TemporaryDirectory() as tmp:
+        log = Path(tmp) / "nested" / ".decisions.log"
+        payload = {"choices": [choice("Redis", fit_to_constraints=HIGH),
+                               choice("File-based", fit_to_constraints=LOW)]}
+        assert cli(payload, "--log", str(log)).returncode == 0
+        assert cli(payload | {"pick": "File-based", "escalated": True},
+                   "--log", str(log)).returncode == 0
+        # env var is the default for --log, so a live eval captures every run
+        assert cli(payload | {"pick": "Redis"}, env={"DECISION_PICKER_LOG": str(log)}).returncode == 0
+
+        rows = [json.loads(x) for x in log.read_text().splitlines()]
+        assert [r["kind"] for r in rows] == ["ranking", "decision", "decision"]
+        assert rows[0]["pick"] is None and rows[0]["diverged"] is None
+        assert rows[1]["pick"] == "File-based" and rows[1]["diverged"] is True
+        assert rows[1]["escalated"] is True
+        assert rows[2]["diverged"] is False
+        assert rows[1]["verdict"]["recommended"] == "Redis"
+        assert rows[1]["choices"][0]["evidence"] == MID
 
 
 def run_all() -> None:
