@@ -29,9 +29,19 @@ hatch natively.
 ### 1. Normalize the choice list
 
 Collect the candidates (from the user's message or your own analysis) into
-`label` + one-line `description` pairs. 2-4 options per question — `AskUserQuestion`
-caps at 4. If there are more than 4, pre-filter to the top 4 by your own judgment
-and say what got cut.
+`label` + one-line `description` pairs. 2-4 options per question —
+`AskUserQuestion` caps at 4.
+
+If there are more than 4, don't silently pre-filter — run the rubric (step 2)
+on all of them first, then use `scripts/tournament.py`'s `build_round()` to
+split them into groups of <=4 (ranks spread evenly across groups, not
+best-group-vs-worst-group). Run one `AskUserQuestion` round per group, each
+question's options carrying their rubric scores, top-of-group flagged
+`(Recommended)`. Feed the round's winners back into `build_round()` and
+repeat until <=4 remain, then do the final pick. Only reach for a custom
+terminal UI (unbuilt — see PLAN.md phase 3) if this chaining proves
+insufficient in a real case, e.g. the user needs to compare all N at once
+rather than in rounds.
 
 ### 2. Score each choice against the rubric
 
@@ -94,8 +104,8 @@ asking is that they can override it.
 
 - Running the full `council` panel for every choice — that's for close or
   high-stakes calls only; most picks are a one-pass self-score.
-- Inventing more than 4 options to fill the UI — `AskUserQuestion` supports 2-4,
-  not "as many as exist."
+- Silently cutting candidates down to 4 without telling the user — use the
+  tournament rounds (step 1) instead so every candidate gets seen.
 - Deciding for the user and reporting the decision instead of asking, when the
   whole point was operator input.
 

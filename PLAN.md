@@ -37,18 +37,26 @@ Problem was: the senior-expert-panel path only fired when scores were within
 - [x] Self-check: `scripts/panel_trigger.py` demo() asserts the forced path
       escalates even with a wide score gap — `python3 scripts/panel_trigger.py`.
 
-## Phase 3 — custom picker UI beyond AskUserQuestion's 4-option cap
-Problem today: more than 4 candidates get silently pre-filtered.
+## Phase 3a — chained AskUserQuestion rounds for >4 candidates ✅ done
+Problem was: more than 4 candidates got silently pre-filtered to top 4.
 
-- [ ] Only build this if a real case hits the 4-option ceiling — check first
-      whether chaining two `AskUserQuestion` calls (round 1: narrow 8→4, round 2:
-      pick from 4) covers it before writing a custom terminal UI. That's stdlib-tier
-      reuse vs. a new rung on the ladder.
-- [ ] If chaining is insufficient (e.g. need to see all N with scores at once,
-      not two hops), then and only then scope a minimal paginated terminal list
-      (no new dependency — plain ANSI, arrow-key nav via existing TTY handling).
+- [x] `scripts/tournament.py`: `build_round()` splits N ranked choices into
+      groups of <=4 (ranks spread evenly, not top-group-vs-bottom-group);
+      `simulate_to_single_winner()` drives repeated rounds down to one pick.
+- [x] SKILL.md step 1 now runs a tournament round per group instead of
+      cutting to top 4 silently — every candidate gets seen by the user.
+- [x] Self-check: `scripts/tournament.py` demo() feeds 9 candidates and
+      asserts the flow ends on the true best one — `python3 scripts/tournament.py`.
+
+## Phase 3b — custom terminal picker UI (not yet built)
+Only build this if the chained-rounds approach above proves insufficient in
+a real case — e.g. the user needs to compare all N options side-by-side at
+once rather than round-by-round. No known case has hit this yet.
+
+- [ ] If needed: scope a minimal paginated terminal list (no new dependency —
+      plain ANSI, arrow-key nav via existing TTY handling).
 - [ ] Self-check: given 9 candidates, the flow ends with one clear pick and the
-      user can see why the other 8 were cut or ranked lower.
+      user can see why the other 8 were cut or ranked lower, in a single view.
 
 ## Non-goals (still YAGNI after all three phases)
 - A persistent scoring database or history of past decisions — add only if a
