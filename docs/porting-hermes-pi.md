@@ -347,13 +347,21 @@ Each driver earns trust by the same standard, enforced by the same script:
 | G6 union frontmatter | `claude plugin validate` + Hermes frontmatter check both pass on the one SKILL.md | (already green; re-run in CI) |
 | G7 timeout honesty | a timed-out ask logs `pick: null, timed_out: true` and the record reads `kind: decision` | covered in G2; live-path spot-check with one deliberately unanswered run |
 
-Current state: G1, G2, G6 green. G4 smoke-tested (driver + skill + rubric all
-run; one genuine protocol violation surfaced — tracked, not a harness bug);
-full-scenario G4 pass pending. G3 baseline existed pre-port; re-run after
-the adapter refactor. G5 blocked on the pi extension being written and
-`pi install`ed — not started, honestly so. The pi tool-call event shape
-([unverified] above) must be captured in the same scripted run that first
-exercises G5.
+Current state (2026-09-18, live full passes): G1, G2, G6 green; G7
+green (unit + live-path spot-check: `pick: null, timed_out: true, kind:
+decision`). The pi extension is written and `pi install`ed; the pi
+tool-call event shape is captured and the adapter rewritten to the real
+shape. G3 ran full (45/45): **gate FAIL at 42.2%** (95% CI [29.0%,
+56.7%]) — genuine model deviations, dominated by `ESCALATION_WHEN_
+CONTESTED` (skipping escalation on `not-separable`/`unverified-evidence`
+verdicts), 40/45 rubric invocations, 84.4% self-agreement. G3's model
+resolution was also found broken (`--model` never reached the driver —
+the pass ran the adapter's opus default, not the documented sonnet);
+fixed, but the recorded numbers are the opus run. G4/G5 re-running with
+the fixed adapters (the first attempts were voided by two harness bugs —
+hermes flat-event parsing, pi env-key model resolution — both captured,
+fixed, and documented above). Remaining: record G4/G5 verdicts, then a
+G3 re-run on the documented default model if the opus numbers stand.
 
 ## What does NOT port (documented, don't re-solve)
 
