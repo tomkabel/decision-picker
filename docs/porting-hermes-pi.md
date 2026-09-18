@@ -370,17 +370,21 @@ en route and the affected attempts voided, see above):
   scenario's candidates — the example is so concrete it invites verbatim
   reuse. Actionable skill fix: make the step-2 example clearly
   placeholder-shaped, then re-run the gate.
-- **G5 pi (deepseek-v4-pro): VOID — blocked on provider balance.**
-  deepseek hit `402 Insufficient Balance` mid-pass (run 12 of 45); the
-  adapter now raises on provider errors (committed), so the void is loud.
-  Re-run requires topping up the pi deepseek account or pinning
-  `PI_EVAL_MODEL` to another authed provider.
+- **G5 pi: two runs.** deepseek-v4-pro: **VOID — blocked on provider
+  balance** (402 at run 12/45; adapter now raises on provider errors).
+  Re-run on melious glm-5.3:speed (same model as G4, provider added to
+  pi via `~/.pi/agent/models.json`; note melious requires
+  `compat.supportsDeveloperRole: false` — it rejects pi's default
+  `developer` role): **FAIL 15.6%** [7.7%, 28.8%], 45/45 rubric
+  invocations, 93.3% self-agreement. One violation is the same
+  SKILL.md example copy-paste as G4 (rubric scored Redis/File-based on
+  a module-structure scenario).
 
-Remaining: G5 re-run after the provider is funded; G3 re-run on the
-documented default model if the opus numbers are not the intended
-baseline; the SKILL.md example-payload fix for the G4 copy-paste
-finding, followed by fresh gate runs (changing the skill invalidates
-recorded numbers).
+Remaining: G3 re-run on the documented default model if the opus numbers are not
+the intended baseline; the SKILL.md example-payload fix for the copy-paste
+finding (observed on both G4 and G5 — the highest-leverage fix, since one
+failure mode accounts for violations in both passes), followed by fresh gate
+runs (changing the skill invalidates recorded numbers).
 
 ## What does NOT port (documented, don't re-solve)
 
