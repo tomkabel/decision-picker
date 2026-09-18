@@ -416,7 +416,16 @@ def _pi_adapter(prompt: str, cwd: Path, env: dict, timeout: int):
     events: list[dict] = []
     for e in raw:
         if e.get("type") == "message_end" and e.get("message", {}).get("role") == "assistant":
-            events.append({"type": "assistant", "message": e["message"]})
+            m = e["message"]
+            # Provider-level failures (e.g. 402 Insufficient Balance, observed
+            # mid-full-pass) arrive as empty-content assistant messages with
+            # stopReason:"error" and an errorMessage. These must fail loudly —
+            # scoring them as protocol-clean traces silently voids the gate
+            # (first observed as a 12/45 rubric-invocation cliff).
+            if m.get("stopReason") == "error" or m.get("errorMessage"):
+                raise RuntimeError(f"pi provider error: "
+                                   f"{m.get('errorMessage') or m.get('stopReason')}")
+            events.append({"type": "assistant", "message": m})
         elif e.get("type") == "tool_execution_start":
             events.append({"type": "assistant", "message": {"content": [
                 {"type": "tool_use", "name": e.get("toolName", ""),
