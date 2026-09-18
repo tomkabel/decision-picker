@@ -314,6 +314,30 @@ def test_log_records_the_decision_and_divergence() -> None:
         assert rows[1]["choices"][0]["evidence"] == MID
 
 
+def test_timed_out_logging() -> None:
+    """A timed-out ask is a closed decision record, distinguishable from an open ranking.
+
+    pick null + timed_out true  -> asked, never answered (kind: decision)
+    pick null, no timed_out      -> pre-answer ranking (kind: ranking)
+    Without the flag these two are indistinguishable in the log.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        log = Path(td) / "d.log"
+        payload = {"choices": [choice("Redis", fit_to_constraints=HIGH, precedent=HIGH)]}
+
+        assert cli(payload, "--log", str(log)).returncode == 0
+        assert cli(payload | {"timed_out": True}, "--log", str(log)).returncode == 0
+
+        rows = [json.loads(x) for x in log.read_text().splitlines()]
+        assert rows[0]["kind"] == "ranking"
+        assert rows[0]["pick"] is None and rows[0]["timed_out"] is False
+        # the timed-out row closes the decision without inventing an answer
+        assert rows[1]["kind"] == "decision"
+        assert rows[1]["pick"] is None
+        assert rows[1]["timed_out"] is True
+        assert rows[1]["diverged"] is None  # no pick -> divergence is undefined, not False
+
+
 def run_all() -> None:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for t in tests:
