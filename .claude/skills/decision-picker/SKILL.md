@@ -1,16 +1,25 @@
 ---
 name: decision-picker
-description: Turn a list of candidate choices (or operator input options) into an interactive terminal selection via AskUserQuestion, annotated with a transparent multi-criteria score per choice, a best-guess default, and an optional adversarial review for close or high-stakes calls. Use when the user gives you several options and wants a reasoned pick, not just a picked-for-you answer.
+description: Choose between options with a scored, ask-first rubric.
 allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rubric.py:*)
+version: 0.2.0
+author: Tom Kristian Abel (tkabel), Hermes Agent
+license: MIT
+platforms: [linux, macos, windows]
 metadata:
   origin: custom
+  hermes:
+    tags: [Decisions, MCDA, AskUser]
+    related_skills: [council]
 ---
 
 # Decision Picker
 
-Wraps the native `AskUserQuestion` tool with a multi-criteria rubric. Do not
-build a custom picker — `AskUserQuestion` already renders the choice list, the
-recommended-option marker, and the free-text "Other" escape hatch natively.
+Wraps the harness's native interactive-ask tool with a multi-criteria rubric.
+Do not build a custom picker — every target harness already renders the choice
+list, the recommended-option marker, and the free-text "Other" escape hatch
+natively (`AskUserQuestion` on Claude, `clarify` on Hermes, the pi
+`decision_picker` extension tool).
 
 **The one rule that governs everything below:** the rubric produces a *utility*
 score, not a probability. It is an internal sort key. Never show the user a
@@ -114,11 +123,19 @@ Three rules on *how* to score, which matter as much as the anchors:
    `weights` map when the defaults don't fit — and say in the question body that
    you changed them, and why.
 
-Run it. `${CLAUDE_SKILL_DIR}` resolves to this skill's directory; the heredoc
-form is what the pre-approval in `allowed-tools` matches, so use it as written:
+Run it. Resolve the script path from the skill's own directory — the exact
+form depends on the harness:
+
+| harness | invocation |
+|---|---|
+| Claude Code | `python3 "${CLAUDE_SKILL_DIR}/scripts/rubric.py"` — `${CLAUDE_SKILL_DIR}` resolves to this skill's directory; the heredoc form is what the pre-approval in `allowed-tools` matches, so use it as written |
+| Hermes Agent | `python3 "${HERMES_HOME:-$HOME/.hermes}/skills/<category>/decision-picker/scripts/rubric.py"` via the `terminal` tool — global skills live at a stable location, and profiles relocate via `$HERMES_HOME` automatically |
+| pi | `python3 "$HOME/.pi/agent/skills/decision-picker/scripts/rubric.py"` (or `{baseDir}/scripts/rubric.py` where `{baseDir}` is supported) via `bash` |
+
+The payload contract is identical everywhere — a single JSON object on stdin:
 
 ```bash
-python3 "${CLAUDE_SKILL_DIR}/scripts/rubric.py" <<'JSON'
+python3 <skill-dir>/scripts/rubric.py <<'JSON'
 {"choices": [
   {"label": "Redis",         "evidence": 90, "scores": {"fit_to_constraints": 90, "reversibility": 60, "precedent": 90}},
   {"label": "In-memory LRU", "evidence": 60, "scores": {"fit_to_constraints": 20, "reversibility": 90, "precedent": 20}},
@@ -193,7 +210,7 @@ Then:
   moved and why. The eval fails a trace where a reason disappears without an
   intervening escalation; this was found by an agent doing exactly this.
 
-### 4. Present via AskUserQuestion
+### 4. Present the ask through the harness's interactive tool
 
 **One question, up to 4 options.** No brackets, no elimination rounds. If there
 are more than 4 candidates, present the top 4 and name the rest in the question
@@ -207,7 +224,19 @@ one final question of ≤4. Never auto-advance a candidate by score — that
 replaces the user's choice with your own, using the scores this rubric exists to
 keep honest.
 
-In each option's `description`:
+**How to render it, per harness:**
+
+| harness | ask mechanism | recommended marker | free-text Other |
+|---|---|---|---|
+| Claude Code | `AskUserQuestion`, `options[]` with `label`/`description` | append `(Recommended)` to the top option's `label` | auto-appended "Other" row |
+| Hermes Agent | `clarify` tool, `questions[].choices[]` (≤4), `multi_select` for keep-narrowing | put the recommended option **first** — position is the marker; there is no label field to edit | auto-appended "Other" free-text row |
+| pi | `decision_picker` extension tool (same JSON shape as `AskUserQuestion`) | append `(Recommended)` to the first option's `label` | "Other" choice, free-text input |
+
+Shared invariants regardless of harness: at most 4 options, exactly one
+recommended marker matching the rubric's top option, an Other path that can
+name any candidate, no score numbers anywhere in the rendered text.
+
+In each option's description:
 
 - The **band**, not a number: `Strong lead`, `Contested`, `Weak field`.
 - One clause on the real tradeoff — including the cost, not just the upside.
@@ -228,20 +257,42 @@ menu is already steering the user:
   the question body says so in plain words: *"these two are close enough that my
   ranking could go either way."*
 
+Composed shape (labels/descriptions identical on all harnesses; only the tool
+name and field casing differ):
+
 ```text
-AskUserQuestion({
-  questions: [{
-    question: "Which caching approach? Runner-up case: in-memory LRU needs no new infra at all, which matters more if this stays a single box. Excluded: Managed SaaS (violates the self-hosted requirement).",
-    header: "Caching",
-    options: [
-      { label: "Redis (Recommended)", description: "Strong lead — proven at this shape, but adds an infra dependency to operate" },
-      { label: "In-memory LRU",       description: "Contested — zero infra, but the cache dies on every restart" },
-      { label: "File-based",          description: "Weak field — simplest, too slow above light traffic" }
-    ],
-    multiSelect: false
-  }]
-})
+{question}: "Which caching approach? Runner-up case: in-memory LRU needs no new
+infra at all, which matters more if this stays a single box. Excluded: Managed
+SaaS (violates the self-hosted requirement).",
+options: [
+  { label: "Redis (Recommended)", description: "Strong lead — proven at this shape, but adds an infra dependency to operate" },
+  { label: "In-memory LRU",       description: "Contested — zero infra, but the cache dies on every restart" },
+  { label: "File-based",          description: "Weak field — simplest, too slow above light traffic" }
+]
 ```
+
+#### When the ask times out or is never answered
+
+This is not hypothetical: clarify prompts routinely expire unanswered in
+autonomous runs. The skill must handle it without inventing a user decision.
+
+- **Default (interactive or unknown): block and surface.** Present the ranking,
+  the band, the runner-up case, and *that you are waiting for a choice* in the
+  final message. Proceeding with the recommendation is acting on the user's
+  behalf without their input — exactly the "deciding for the user and reporting
+  the decision" anti-pattern. Do not re-ask; do not proceed. The turn ends with
+  the ask open.
+- **Exception (explicitly autonomous mode only): proceed, flagged.** When the
+  run is explicitly non-interactive (headless eval, cron, `--oneshot` with no
+  ask capability, or the user pre-authorised "pick on timeout"), proceed with
+  the recommended option, state plainly in the output that no user answer
+  existed and the recommendation acted alone, and log it honestly:
+  pass `"timed_out": true` with `"pick": null` to the `--log` run. The decision
+  log then distinguishes *asked-and-never-answered* from *never asked* — pick
+  `null` + `timed_out` true is a closed decision record; a plain null-pick
+  ranking is an open one.
+- **Never** silently treat a timeout as consent, and never log a timeout under
+  `pick: <some option>` — that fabricates a user decision that never happened.
 
 ### 5. Act on the answer, and record it
 
@@ -252,10 +303,11 @@ AskUserQuestion({
   rather than a candidate, stop and re-frame instead.
 - **Consequential actions still need their normal confirmation.** Winning the
   ranking is not authorisation.
-- **Log it.** Re-run the script with the same payload plus the user's pick:
+- **Log it.** Re-run the script with the same payload plus the user's pick
+  (same `<skill-dir>` resolution as the scoring run):
 
 ```bash
-python3 "${CLAUDE_SKILL_DIR}/scripts/rubric.py" --log <<'JSON'
+python3 <skill-dir>/scripts/rubric.py --log <<'JSON'
 {"pick": "In-memory LRU", "escalated": false, "choices": [ ...the same choices... ]}
 JSON
 ```
@@ -289,12 +341,15 @@ JSON
 
 ## Testing
 
-The scripts are the easy part; the protocol is what breaks. Both are checked:
+The scripts are the easy part; the protocol is what breaks. Both are checked
+(paths resolve per the invocation table in step 2):
 
 ```bash
-python3 "${CLAUDE_SKILL_DIR}/scripts/test_rubric.py"        # validation, gating, ranking
-python3 "${CLAUDE_SKILL_DIR}/scripts/eval/check_trace.py"   # protocol assertions
-python3 "${CLAUDE_SKILL_DIR}/scripts/eval/check_trace.py" --live --repeat 3
+python3 <skill-dir>/scripts/test_rubric.py                       # validation, gating, ranking
+python3 <skill-dir>/scripts/eval/check_trace.py                  # protocol assertions (fixtures)
+python3 <skill-dir>/scripts/eval/check_trace.py --live --repeat 3
+python3 <skill-dir>/scripts/eval/check_trace.py --live --driver hermes
+python3 <skill-dir>/scripts/eval/check_trace.py --live --driver pi
 ```
 
 `check_trace.py` asserts what actually matters: ≤4 options per call, no
@@ -302,13 +357,19 @@ score-shaped number in any rendered text, `(Recommended)` matching the ranking,
 escalation happening exactly when the rubric's reasons say it should, excluded
 options never offered, `Other` answers re-scored before use, injection-shaped
 candidates surfaced and never executed, and the final action matching the user's
-pick rather than the recommendation.
+pick rather than the recommendation. The assertions are harness-neutral — they
+read the decision log and the composed ask, never a harness-specific event
+shape. `--driver claude|hermes|pi` selects the live driver; the protocol-break
+gate, Wilson interval, and `--repeat` self-agreement logic are identical across
+drivers.
 
-`--live` drives real headless sessions. Note its ceiling: **`AskUserQuestion` is
-not available in `claude -p`**, so a live run cannot observe a real ask. It gets
-ground truth on the step that actually varies — the sub-scores, read from the
-decision log the script itself writes — and lints the ask as a composed artifact.
-`--repeat` measures how often the same scenario produces the same recommendation.
+`--live` drives real headless sessions. Note its ceiling: **no harness exposes
+its interactive ask tool headlessly** (`AskUserQuestion` is absent from
+`claude -p`; `clarify` cannot render without a TTY; the pi extension's UI
+likewise), so a live run cannot observe a real ask. It gets ground truth on the
+step that actually varies — the sub-scores, read from the decision log the
+script itself writes — and lints the ask as a composed artifact. `--repeat`
+measures how often the same scenario produces the same recommendation.
 
 ## Related Skills
 

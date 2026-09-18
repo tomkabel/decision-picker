@@ -454,9 +454,15 @@ def append_log(path: Path, payload: Mapping[str, object], verdict: Verdict) -> N
     pick = payload.get("pick")
     pick = sanitise_label(pick) if pick is not None else None
     recommended = verdict.recommended.label if verdict.recommended else None
+    # `timed_out` is the honest record for a headless/autonomous run: the ask
+    # rendered, no answer came back within the harness's window, and the record
+    # must not read identically to a skipped or crashed call. Without it a
+    # `pick: null` decision line is ambiguous — null pick + timed_out=true says
+    # "asked, timed out, no answer exists"; null pick without it is unexplained.
+    timed_out = bool(payload.get("timed_out"))
     record = {
         "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "kind": "decision" if pick is not None else "ranking",
+        "kind": "decision" if (pick is not None or timed_out) else "ranking",
         "weights": dict(payload.get("weights") or DEFAULT_WEIGHTS),  # type: ignore[arg-type]
         "choices": [
             {
@@ -470,6 +476,7 @@ def append_log(path: Path, payload: Mapping[str, object], verdict: Verdict) -> N
         "verdict": _verdict_to_dict(verdict),
         "escalated": payload.get("escalated"),
         "pick": pick,
+        "timed_out": timed_out,
         "diverged": None if pick is None else pick != recommended,
     }
     path.parent.mkdir(parents=True, exist_ok=True)

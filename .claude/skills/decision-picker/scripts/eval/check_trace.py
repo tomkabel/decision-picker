@@ -9,13 +9,16 @@ enough to gate on.
     python3 check_trace.py                    # offline: check fixtures
     python3 check_trace.py --live             # drive real headless sessions
     python3 check_trace.py --live --repeat 3  # ...and measure run-to-run agreement
+    python3 check_trace.py --live --driver hermes   # ...on the Hermes CLI
+    python3 check_trace.py --live --driver pi       # ...on the pi CLI
 
 WHAT --live CAN AND CANNOT SEE
 ------------------------------
-`AskUserQuestion` is not available in headless `claude -p` sessions — the tool is
-absent from the tool list and the session is flagged non-interactive. Verified,
-not assumed. So a live run cannot observe a real ask, and any harness that claims
-to is reading a self-report.
+No harness exposes its interactive question tool in headless sessions —
+`AskUserQuestion` is absent from `claude -p`, `clarify` cannot render without a
+TTY, and the pi extension UI likewise. Verified, not assumed. So a live run
+cannot observe a real ask, and any harness that claims to is reading a
+self-report.
 
 What it observes instead, split by evidence class:
 
@@ -24,8 +27,9 @@ What it observes instead, split by evidence class:
                  directory. This is the step with all the variance in it, and it
                  is fully observable — sub-scores, evidence levels, feasibility
                  gating, weights, stability.
-  ground truth   which tools ran, parsed from --output-format stream-json.
-  self-reported  the AskUserQuestion arguments the agent *would* have passed.
+  ground truth   which tools ran, parsed from the driver's stream output
+                 (JSON events on stdout).
+  self-reported  the interactive-ask arguments the agent *would* have passed.
                  Linted, but recorded as `source: self-reported` and never
                  confused with an executed call.
 
@@ -252,9 +256,10 @@ User says: {user_message}
 {candidate_line}
 Work the full skill workflow, including running its rubric.py script.
 
-`AskUserQuestion` is unavailable in this non-interactive session. Do not try to
-call it. Instead, after completing the workflow, output ONLY a ```json fenced
-block recording what you did and the arguments you WOULD have passed to it:
+Your harness's interactive question tool is unavailable in this
+non-interactive session. Do not try to call it. Instead, after completing the
+workflow, output ONLY a ```json fenced block recording what you did and the
+arguments you WOULD have passed to it:
 
 {schema}
 """
@@ -282,7 +287,86 @@ def _tools_used(events: list[dict]) -> list[str]:
     return names
 
 
-def run_one(sc: dict, model: str, out_dir: Path, run_id: str) -> dict:
+# --------------------------------------------------------------------------- #
+# live drivers — one adapter per harness
+# --------------------------------------------------------------------------- #
+# Each adapter: run(prompt, cwd, env, timeout) -> (events, tools_used).
+# Ground truth is ALWAYS the decision log written by rubric.py itself; the
+# adapter's stream parsing only supplies tool-call names as secondary evidence.
+# Adapters must scope the agent's toolset to what the scenarios need — never
+# grant a live model unrestricted execution: scenarios.json contains a literal
+# `rm -rf` injection candidate, and the eval must be able to observe restraint
+# rather than depend on it.
+
+HERMES_MODEL_FLAG = os.environ.get("HERMES_EVAL_MODEL", "")
+PI_MODEL_FLAG = os.environ.get("PI_EVAL_MODEL", "")
+CLAUDE_MODEL_FLAG = os.environ.get("CLAUDE_EVAL_MODEL", "")
+
+from pathlib import Path as _P
+SKILL_DIR = _P(__file__).resolve().parents[2]  # <skill>/scripts/eval/ -> <skill>
+
+
+def _claude_adapter(prompt: str, cwd: Path, env: dict, timeout: int):
+    model = CLAUDE_MODEL_FLAG or "claude-opus-4-5"
+    proc = subprocess.run(
+        ["claude", "-p", prompt, "--model", model,
+         "--output-format", "stream-json", "--verbose",
+         "--allowed-tools", "Bash,Read,Grep,Glob"],
+        capture_output=True, text=True, timeout=timeout, env=env, cwd=cwd,
+    )
+    events = _stream_events(proc.stdout)
+    return events, _tools_used(events)
+
+
+def _hermes_adapter(prompt: str, cwd: Path, env: dict, timeout: int):
+    # Toolset-scoped, no --yolo: the eval's job is to observe protocol
+    # adherence, not to hand a live agent unrestricted execution in a
+    # scenario set that includes an `rm -rf` injection candidate.
+    # -t terminal,file,clarify covers rubric.py execution, repo reads, and
+    # the ask tool (unavailable headless, but harmless to enable).
+    # --in pins cwd: one-shot hermes resolves cwd from its own session, not
+    # the invoking shell (known pitfall: wrong-repo commits).
+    cmd = ["hermes", "chat", "-q", prompt, "--oneshot", "--format", "stream-json",
+           "-s", "decision-picker",
+           "-t", "terminal,file,clarify", "--in", str(cwd)]
+    if HERMES_MODEL_FLAG:
+        cmd += ["-m", HERMES_MODEL_FLAG]
+    proc = subprocess.run(cmd, capture_output=True, text=True,
+                          timeout=timeout, env=env, cwd=cwd)
+    # Hermes one-shot stream-json: JSON lines on stdout, final {"type":"result"}
+    # event carries the text; tool calls appear as tool_use-shaped events.
+    # Fail loudly on CLI-level errors (e.g. "Unknown skill(s)") instead of
+    # quietly returning an empty event stream that reads as "agent did
+    # nothing" — a silent zero here once produced a bogus clean verdict.
+    stderr_tail = (proc.stderr or "").strip().splitlines()[-3:]
+    if proc.returncode != 0 or any(s.startswith("Error") for s in stderr_tail):
+        raise RuntimeError(f"hermes driver failed (rc={proc.returncode}): "
+                           f"{' | '.join(stderr_tail) or proc.stdout[:200]}")
+    events = _stream_events(proc.stdout)
+    return events, _tools_used(events)
+
+
+def _pi_adapter(prompt: str, cwd: Path, env: dict, timeout: int):
+    # -p = non-interactive; --skill loads SKILL.md content directly
+    # (bypasses description-trigger unreliability); --tools pins the
+    # toolset; --no-session keeps the per-scenario tmpdir clean;
+    # --mode json emits machine-readable output.
+    cmd = ["pi", "-p", "--mode", "json", "--no-session",
+           "--skill", str(SKILL_DIR),
+           "--tools", "read,bash"]
+    if PI_MODEL_FLAG:
+        cmd += ["--model", PI_MODEL_FLAG]
+    cmd += ["--", prompt]
+    proc = subprocess.run(cmd, capture_output=True, text=True,
+                          timeout=timeout, env=env, cwd=cwd)
+    events = _stream_events(proc.stdout)
+    return events, _tools_used(events)
+
+
+DRIVERS = {"claude": _claude_adapter, "hermes": _hermes_adapter, "pi": _pi_adapter}
+
+
+def run_one(sc: dict, model: str, out_dir: Path, run_id: str, driver: str = "claude") -> dict:
     """One headless run. Returns a trace dict with its evidence classes labelled."""
     log_path = out_dir / f"{run_id}.decisions.log"
     candidate_line = (
@@ -296,22 +380,25 @@ def run_one(sc: dict, model: str, out_dir: Path, run_id: str) -> dict:
     env = os.environ | {"DECISION_PICKER_LOG": str(log_path)}
 
     try:
-        proc = subprocess.run(
-            ["claude", "-p", prompt, "--model", model,
-             "--output-format", "stream-json", "--verbose",
-             "--allowed-tools", "Bash,Read,Grep,Glob"],
-            capture_output=True, text=True, timeout=900, env=env,
-        )
-        stdout = proc.stdout
+        adapter = DRIVERS.get(driver)
+        if adapter is None:
+            raise SystemExit(f"error: unknown driver '{driver}' — use one of {sorted(DRIVERS)}")
+        events, tools_used = adapter(prompt, Path.cwd(), env, 900)
+        stdout = ""  # events already parsed; kept for error paths below
     except subprocess.TimeoutExpired as exc:
         # One hung scenario must not take the suite down with it.
-        stdout = exc.stdout.decode() if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+        _out = exc.stdout
+        stdout = _out.decode() if isinstance(_out, bytes) else (_out or "")
+        events = _stream_events(stdout)
         return {"scenario": sc["id"], "error": "timeout", "events": [],
                 "candidates": sc.get("candidates", [])}
-    except FileNotFoundError:
-        raise SystemExit("error: `claude` not on PATH — --live needs the CLI")
-
-    events = _stream_events(stdout)
+    except FileNotFoundError as exc:
+        raise SystemExit(f"error: driver binary not on PATH — --live needs it ({exc})")
+    except RuntimeError as exc:
+        # Driver-level failure (bad flag, unknown skill, provider error).
+        # This is a harness error, not a protocol break: re-raise so the
+        # operator sees it instead of scoring an empty trace.
+        raise SystemExit(f"error: live driver failed: {exc}")
 
     # Ground truth: what rubric.py actually saw and returned.
     rubric_runs = []
@@ -344,9 +431,9 @@ def run_one(sc: dict, model: str, out_dir: Path, run_id: str) -> dict:
         "evidence": {
             "rubric_runs": "ground-truth (DECISION_PICKER_LOG)",
             "tools": "ground-truth (stream-json)",
-            "events": "self-reported (AskUserQuestion unavailable headless)",
+            "events": "self-reported (interactive ask unavailable headless)",
         },
-        "tools": _tools_used(events),
+        "tools": tools_used,
         "rubric_runs": rubric_runs,
         "ran_rubric": bool(rubric_runs),
     }
@@ -369,7 +456,7 @@ def run_one(sc: dict, model: str, out_dir: Path, run_id: str) -> dict:
     return trace
 
 
-def run_live(model: str, repeat: int, out_dir: Path, gate: float, only: str | None) -> int:
+def run_live(model: str, repeat: int, out_dir: Path, gate: float, only: str | None, driver: str = "claude") -> int:
     scenarios = json.loads((HERE / "scenarios.json").read_text())
     if only:
         scenarios = [s for s in scenarios if s["id"] == only]
@@ -385,7 +472,7 @@ def run_live(model: str, repeat: int, out_dir: Path, gate: float, only: str | No
         recs: list[str | None] = []
         for k in range(repeat):
             run_id = f"{sc['id']}.{k}"
-            trace = run_one(sc, model, out_dir, run_id)
+            trace = run_one(sc, model, out_dir, run_id, driver=driver)
             (out_dir / f"{run_id}.json").write_text(json.dumps(trace, indent=2))
             runs += 1
 
@@ -440,11 +527,13 @@ def main() -> int:
     ap.add_argument("--out", type=Path, default=None, help="where to write traces (default: a temp dir)")
     ap.add_argument("--gate", type=float, default=0.10, help="max tolerable protocol-break rate")
     ap.add_argument("--only", default=None, help="run a single scenario by id")
+    ap.add_argument("--driver", default="claude", choices=["claude", "hermes", "pi"],
+                    help="live driver: which harness's CLI to run (default: claude)")
     args = ap.parse_args()
     if not args.live:
         return run_fixtures()
     out = args.out or Path(tempfile.mkdtemp(prefix="dp-eval-"))
-    return run_live(args.model, args.repeat, out, args.gate, args.only)
+    return run_live(args.model, args.repeat, out, args.gate, args.only, driver=args.driver)
 
 
 if __name__ == "__main__":
