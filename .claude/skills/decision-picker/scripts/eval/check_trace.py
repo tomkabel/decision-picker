@@ -299,7 +299,12 @@ def _tools_used(events: list[dict]) -> list[str]:
 # rather than depend on it.
 
 HERMES_MODEL_FLAG = os.environ.get("HERMES_EVAL_MODEL", "")
-PI_MODEL_FLAG = os.environ.get("PI_EVAL_MODEL", "")
+# Default-pinned: pi's own default-model resolution scans env API keys, which in
+# a Hermes session surface HERMES_CUSTOM_API_* keys and resolve to a provider
+# that errors instantly (stopReason:"error", empty assistant content, rc 0) —
+# the vacuous-trace guard below catches it, but pinning the authed provider
+# makes runs deterministic. Override with PI_EVAL_MODEL.
+PI_MODEL_FLAG = os.environ.get("PI_EVAL_MODEL", "deepseek-v4-pro")
 CLAUDE_MODEL_FLAG = os.environ.get("CLAUDE_EVAL_MODEL", "")
 
 from pathlib import Path as _P
@@ -343,7 +348,25 @@ def _hermes_adapter(prompt: str, cwd: Path, env: dict, timeout: int):
         raise RuntimeError(f"hermes driver failed (rc={proc.returncode}): "
                            f"{' | '.join(stderr_tail) or proc.stdout[:200]}")
     events = _stream_events(proc.stdout)
-    return events, _tools_used(events)
+    # Hermes one-shot stream-json emits FLAT events — {"type":"text","text":...}
+    # and {"type":"tool_use","name":...,"input":...} — not Claude's assistant
+    # envelopes (captured live 2026-09-18; the earlier assumption of a Claude-
+    # shaped stream made every hermes trace read as "no text, no tools",
+    # silently voiding the self-reported escalation events). Normalize to the
+    # assistant/tool_use shape _tools_used and the JSON-block extraction
+    # already understand.
+    norm: list[dict] = []
+    for e in events:
+        if e.get("type") == "text":
+            norm.append({"type": "assistant", "message": {"content": [
+                {"type": "text", "text": e.get("text", "")}]}})
+        elif e.get("type") == "tool_use":
+            norm.append({"type": "assistant", "message": {"content": [
+                {"type": "tool_use", "name": e.get("name", ""),
+                 "input": e.get("input", {})}]}})
+        else:
+            norm.append(e)
+    return norm, _tools_used(norm)
 
 
 def _pi_adapter(prompt: str, cwd: Path, env: dict, timeout: int):
@@ -388,6 +411,14 @@ def _pi_adapter(prompt: str, cwd: Path, env: dict, timeout: int):
             events.append({"type": "assistant", "message": {"content": [
                 {"type": "tool_use", "name": e.get("toolName", ""),
                  "input": e.get("args", {})}]}})
+    if not events:
+        # A session header with zero assistant messages / tool calls is a
+        # driver-level failure (observed when the full pass ran detached:
+        # every scenario returned an empty stream that scored as a bogus
+        # "clean"). Vacuous traces must fail loudly, not pass silently.
+        raise RuntimeError(f"pi driver produced no assistant events "
+                           f"(rc={proc.returncode}): "
+                           f"{' | '.join(stderr_tail) or proc.stdout[:200]}")
     return events, _tools_used(events)
 
 
