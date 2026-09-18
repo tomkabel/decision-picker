@@ -351,17 +351,36 @@ Current state (2026-09-18, live full passes): G1, G2, G6 green; G7
 green (unit + live-path spot-check: `pick: null, timed_out: true, kind:
 decision`). The pi extension is written and `pi install`ed; the pi
 tool-call event shape is captured and the adapter rewritten to the real
-shape. G3 ran full (45/45): **gate FAIL at 42.2%** (95% CI [29.0%,
-56.7%]) — genuine model deviations, dominated by `ESCALATION_WHEN_
-CONTESTED` (skipping escalation on `not-separable`/`unverified-evidence`
-verdicts), 40/45 rubric invocations, 84.4% self-agreement. G3's model
-resolution was also found broken (`--model` never reached the driver —
-the pass ran the adapter's opus default, not the documented sonnet);
-fixed, but the recorded numbers are the opus run. G4/G5 re-running with
-the fixed adapters (the first attempts were voided by two harness bugs —
-hermes flat-event parsing, pi env-key model resolution — both captured,
-fixed, and documented above). Remaining: record G4/G5 verdicts, then a
-G3 re-run on the documented default model if the opus numbers stand.
+shape.
+
+Full-pass verdicts (45 runs each, genuine model deviations — the eval
+doing its job, not harness bugs; three harness bugs were found and fixed
+en route and the affected attempts voided, see above):
+
+- **G3 claude (opus-4-5): FAIL 42.2%** [29.0%, 56.7%], 40/45 rubric
+  invocations, 84.4% self-agreement. Dominated by `ESCALATION_WHEN_
+  CONTESTED` — skipping escalation on `not-separable` /
+  `unverified-evidence` verdicts. Model resolution was broken during
+  this run (`--model` dead → opus default, not the documented sonnet);
+  fixed, numbers stand as the opus run.
+- **G4 hermes (profile default glm-5.3:speed): FAIL 13.3%** [6.3%,
+  26.2%], 43/45 rubric invocations, 80.0% self-agreement. Two of the six
+  violations share a concrete root cause: the model copy-pasted the
+  worked example payload from SKILL.md (Redis/File-based) instead of the
+  scenario's candidates — the example is so concrete it invites verbatim
+  reuse. Actionable skill fix: make the step-2 example clearly
+  placeholder-shaped, then re-run the gate.
+- **G5 pi (deepseek-v4-pro): VOID — blocked on provider balance.**
+  deepseek hit `402 Insufficient Balance` mid-pass (run 12 of 45); the
+  adapter now raises on provider errors (committed), so the void is loud.
+  Re-run requires topping up the pi deepseek account or pinning
+  `PI_EVAL_MODEL` to another authed provider.
+
+Remaining: G5 re-run after the provider is funded; G3 re-run on the
+documented default model if the opus numbers are not the intended
+baseline; the SKILL.md example-payload fix for the G4 copy-paste
+finding, followed by fresh gate runs (changing the skill invalidates
+recorded numbers).
 
 ## What does NOT port (documented, don't re-solve)
 
