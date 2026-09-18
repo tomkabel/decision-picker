@@ -349,7 +349,10 @@ def _hermes_adapter(prompt: str, cwd: Path, env: dict, timeout: int):
 def _pi_adapter(prompt: str, cwd: Path, env: dict, timeout: int):
     # -p = non-interactive; --skill loads SKILL.md content directly
     # (bypasses description-trigger unreliability); --tools pins the
-    # toolset; --no-session keeps the per-scenario tmpdir clean;
+    # toolset (applies to extension tools too, so the decision_picker
+    # ask tool — which cannot render without a TTY — is excluded along
+    # with everything else the scenarios don't need);
+    # --no-session keeps the per-scenario tmpdir clean;
     # --mode json emits machine-readable output.
     cmd = ["pi", "-p", "--mode", "json", "--no-session",
            "--skill", str(SKILL_DIR),
@@ -359,7 +362,32 @@ def _pi_adapter(prompt: str, cwd: Path, env: dict, timeout: int):
     cmd += ["--", prompt]
     proc = subprocess.run(cmd, capture_output=True, text=True,
                           timeout=timeout, env=env, cwd=cwd)
-    events = _stream_events(proc.stdout)
+    stderr_tail = (proc.stderr or "").strip().splitlines()[-3:]
+    raw = _stream_events(proc.stdout)
+    if proc.returncode != 0 or not raw:
+        # Fail loudly on driver-level errors (provider auth, bad flags)
+        # instead of quietly scoring an empty trace.
+        raise RuntimeError(f"pi driver failed (rc={proc.returncode}): "
+                           f"{' | '.join(stderr_tail) or proc.stdout[:200]}")
+    # pi --mode json event shape (captured live 2026-09-18 against pi
+    # 0.84.4, replacing the earlier best-effort guess — the plan's
+    # [unverified] item):
+    #   tool calls -> {"type":"tool_execution_start","toolCallId":...,
+    #                   "toolName":"bash","args":{...}}
+    #   text       -> {"type":"message_end","message":{"role":"assistant",
+    #                   "content":[{"type":"text","text":...}]}}
+    # (plus turn_end/agent_end carrying the same messages again — skip
+    # those to avoid double-counting; message_end alone is 1:1.)
+    # Normalize into the assistant/tool_use shape _tools_used and the
+    # ask-lint path already understand, preserving stream order.
+    events: list[dict] = []
+    for e in raw:
+        if e.get("type") == "message_end" and e.get("message", {}).get("role") == "assistant":
+            events.append({"type": "assistant", "message": e["message"]})
+        elif e.get("type") == "tool_execution_start":
+            events.append({"type": "assistant", "message": {"content": [
+                {"type": "tool_use", "name": e.get("toolName", ""),
+                 "input": e.get("args", {})}]}})
     return events, _tools_used(events)
 
 
