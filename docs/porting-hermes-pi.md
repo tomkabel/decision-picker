@@ -38,7 +38,7 @@ run before the claim becomes fact.
 | `${CLAUDE_SKILL_DIR}` | No env var; SKILL.md resolves its scripts from the skill's own reported base dir (Hermes surfaces `skill_dir` when the skill loads); the touchdesigner peer uses `${HERMES_HOME:-$HOME/.hermes}/skills/<category>/<name>/scripts/...` | `{baseDir}` placeholder as used by installed pi skills (e.g. `burpsuite-project-parser`), or a stable absolute path: `$HOME/.pi/agent/skills/decision-picker/scripts/rubric.py` — global skills live at a fixed path |
 | `AskUserQuestion` (≤4 options, `(Recommended)`, `Other` row, `multiSelect`) | **`clarify` tool** — structural match: 1–5 questions, ≤4 choices, first choice is auto-marked `(Recommended)`, an `Other` free-text row is auto-appended, `multi_select` supported | **None built-in.** pi ships only read/bash/edit/write/powershell(+grep/find/ls). Requires a small **pi extension** (TypeScript) registering a custom tool that renders via `ctx.ui` (`select` / `confirm` / `input` / `custom`) — the extensions doc lists "interactive tools (questions, wizards, custom dialogs)" as a first-class use case |
 | `allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rubric.py:*)` | No per-skill tool pre-approval in frontmatter; Hermes gates tools via global approval modes. Drop the field; keep the exact heredoc invocation form so any prefix-based permission rule the user sets still matches | `allowed-tools` exists but is experimental and is a **space-delimited tool-name list** — it can pre-approve `bash`, not a specific command. Weaker granularity; acceptable |
-| `claude -p --output-format stream-json` | `hermes chat -q "<prompt>" --oneshot --format stream-json` (verified flags; verified live: one-shot stream-json emits JSONL on **stdout**, ending with a `{"type":"result"}` event carrying `text` and `session_id`). Session state persists in Hermes' SQLite store (`~/.hermes/state.db`), **not** `~/.hermes/sessions/*.jsonl` — that earlier claim was wrong. The eval parses stdout, not session files. **Pin cwd with `--in "$PWD"`** — one-shot Hermes does not inherit the invoking shell's cwd (known pitfall: wrong-repo commits) | `pi -p --mode json --no-session` per scenario, or `--session-dir <tmpdir>` + parse the session JSONL (format verified: `type: message`, `message.role`, `message.content[]` blocks; version 3) |
+| `claude -p --output-format stream-json` | `hermes chat -q "<prompt>" --oneshot --format stream-json` (verified flags; verified live: one-shot stream-json emits JSONL on **stdout** as FLAT events — `{"type":"text","text":...}` and `{"type":"tool_use","name":...,"input":...}` — ending with a `{"type":"result"}` event carrying `text` and `session_id`; captured 2026-09-18, hermes 0.21.3. **Not** Claude-shaped assistant envelopes — the eval adapter must normalize). Session state persists in Hermes' SQLite store (`~/.hermes/state.db`), **not** `~/.hermes/sessions/*.jsonl` — that earlier claim was wrong. The eval parses stdout, not session files. **Pin cwd with `--in "$PWD"`** — one-shot Hermes does not inherit the invoking shell's cwd (known pitfall: wrong-repo commits) | `pi -p --mode json --no-session` per scenario, or `--session-dir <tmpdir>` + parse the session JSONL (format verified: `type: message`, `message.role`, `message.content[]` blocks; version 3) |
 | Skill preloading for the eval | `hermes chat -s decision-picker` (the `-s/--skills` flag preloads, bypassing description-trigger unreliability) | `pi --skill <path>` (repeatable; additive even with `--no-skills`) — also `--tools`/`--exclude-tools` to pin the toolset deterministically |
 | `/panel` slash opt-in | Hermes has in-session slash commands; a skill cannot register one. Treat the literal text `/panel` in the user message as the deterministic opt-in — it arrives as a normal user message either way | The **extension registers it properly**: `pi.registerCommand("panel", ...)` — cleanest mapping of the three |
 | `council` skill (optional escalation) | `council` exists in Hermes' skill catalog — same caveat prose carries over unchanged | `council` exists in `~/.pi/agent/skills/` (ECC origin) — same |
@@ -229,14 +229,19 @@ directory with `index.ts` + `package.json` if it grows).
    survive an agent that tries to execute it. `--skill` loads the SKILL.md
    content directly, bypassing description-trigger unreliability; the
    `/skill:decision-picker` interactive command exists for users and is
-   worth a README line.
-   **[unverified]** the exact tool-call entry shape in pi's `--mode json`
-   output: capture one real scripted run and record the schema before
-   trusting the tool-name extraction. The session-JSONL message format is
-   verified (version 3, `type: message`, `message.content[]`); the
-   tool-call event shape is not. The adapter's tool parsing is therefore
-   best-effort until that capture happens — the decision log carries the
-   gate either way.
+   worth a README line. **Pin the model** (`--model` / `PI_EVAL_MODEL`):
+   pi's default-model resolution scans environment API keys, so inside a
+   Hermes session it resolves `HERMES_CUSTOM_API_*` keys to a provider that
+   errors instantly (`stopReason:"error"`, empty assistant content, exit 0)
+   — observed live on the first full pass (0/45 rubric runs, vacuous
+   "clean" verdicts).
+   **Verified** (captured 2026-09-18, pi 0.84.4, `--mode json`): tool calls
+   are `{"type":"tool_execution_start","toolCallId":...,"toolName":...,
+   "args":{...}}`; assistant text arrives via `{"type":"message_end",
+   "message":{"role":"assistant","content":[{"type":"text",...}]}}` (with
+   `turn_end`/`agent_end` repeating the same messages — parse `message_end`
+   only, 1:1). The adapter normalizes both to the Claude-shaped internal
+   form and raises on a session-header-only stream (vacuous-trace guard).
 
 6. **Skill loading reliability.** pi's docs warn models don't always read
    the SKILL.md even when the description matches; `/skill:decision-picker`

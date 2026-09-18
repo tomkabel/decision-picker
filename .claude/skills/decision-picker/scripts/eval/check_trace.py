@@ -312,7 +312,12 @@ SKILL_DIR = _P(__file__).resolve().parents[2]  # <skill>/scripts/eval/ -> <skill
 
 
 def _claude_adapter(prompt: str, cwd: Path, env: dict, timeout: int):
-    model = CLAUDE_MODEL_FLAG or "claude-opus-4-5"
+    # Model resolution order: explicit env override, then the CLI --model
+    # threaded through by main() (the README's documented default "sonnet"
+    # must actually reach the driver — an earlier version read this flag at
+    # import time, so --model was dead and the documented command silently
+    # ran opus), then the pre-port adapter default.
+    model = env.get("CLAUDE_EVAL_MODEL") or "claude-opus-4-5"
     proc = subprocess.run(
         ["claude", "-p", prompt, "--model", model,
          "--output-format", "stream-json", "--verbose",
@@ -334,8 +339,11 @@ def _hermes_adapter(prompt: str, cwd: Path, env: dict, timeout: int):
     cmd = ["hermes", "chat", "-q", prompt, "--oneshot", "--format", "stream-json",
            "-s", "decision-picker",
            "-t", "terminal,file,clarify", "--in", str(cwd)]
-    if HERMES_MODEL_FLAG:
-        cmd += ["-m", HERMES_MODEL_FLAG]
+    # run_one threads the CLI --model in as HERMES_EVAL_MODEL when given;
+    # otherwise hermes uses its profile default.
+    hermes_model = env.get("HERMES_EVAL_MODEL") or HERMES_MODEL_FLAG
+    if hermes_model:
+        cmd += ["-m", hermes_model]
     proc = subprocess.run(cmd, capture_output=True, text=True,
                           timeout=timeout, env=env, cwd=cwd)
     # Hermes one-shot stream-json: JSON lines on stdout, final {"type":"result"}
@@ -370,6 +378,9 @@ def _hermes_adapter(prompt: str, cwd: Path, env: dict, timeout: int):
 
 
 def _pi_adapter(prompt: str, cwd: Path, env: dict, timeout: int):
+    # Default-pinned to the authed provider; run_one threads the CLI --model
+    # in as PI_EVAL_MODEL when one is given, which wins over this default.
+    model = env.get("PI_EVAL_MODEL") or PI_MODEL_FLAG or "deepseek-v4-pro"
     # -p = non-interactive; --skill loads SKILL.md content directly
     # (bypasses description-trigger unreliability); --tools pins the
     # toolset (applies to extension tools too, so the decision_picker
@@ -379,9 +390,8 @@ def _pi_adapter(prompt: str, cwd: Path, env: dict, timeout: int):
     # --mode json emits machine-readable output.
     cmd = ["pi", "-p", "--mode", "json", "--no-session",
            "--skill", str(SKILL_DIR),
-           "--tools", "read,bash"]
-    if PI_MODEL_FLAG:
-        cmd += ["--model", PI_MODEL_FLAG]
+           "--tools", "read,bash",
+           "--model", model]
     cmd += ["--", prompt]
     proc = subprocess.run(cmd, capture_output=True, text=True,
                           timeout=timeout, env=env, cwd=cwd)
@@ -437,6 +447,12 @@ def run_one(sc: dict, model: str, out_dir: Path, run_id: str, driver: str = "cla
         schema=(__doc__ or "").split("A trace is:")[1].strip(),
     )
     env = os.environ | {"DECISION_PICKER_LOG": str(log_path)}
+    # Thread the CLI --model (or its default) to the adapter: the env var is
+    # the per-run channel; an adapter's own env-var default (e.g. pi's pinned
+    # deepseek-v4-pro) applies only when the user invoked with no --model.
+    if model:
+        env |= {"CLAUDE_EVAL_MODEL": model, "HERMES_EVAL_MODEL": model,
+                "PI_EVAL_MODEL": model}
 
     try:
         adapter = DRIVERS.get(driver)
@@ -581,7 +597,10 @@ def run_live(model: str, repeat: int, out_dir: Path, gate: float, only: str | No
 def main() -> int:
     ap = argparse.ArgumentParser(description="decision-picker protocol eval")
     ap.add_argument("--live", action="store_true", help="run real headless sessions (slow, costs tokens)")
-    ap.add_argument("--model", default="sonnet", help="model for --live runs")
+    ap.add_argument("--model", default=None,
+                    help="model for --live runs (all drivers; default: per-driver "
+                         "fallback — claude-opus-4-5 / hermes profile default / "
+                         "pi's authed deepseek-v4-pro)")
     ap.add_argument("--repeat", type=int, default=1, help="runs per scenario; >1 measures self-agreement")
     ap.add_argument("--out", type=Path, default=None, help="where to write traces (default: a temp dir)")
     ap.add_argument("--gate", type=float, default=0.10, help="max tolerable protocol-break rate")
