@@ -363,28 +363,31 @@ en route and the affected attempts voided, see above):
   `unverified-evidence` verdicts. Model resolution was broken during
   this run (`--model` dead → opus default, not the documented sonnet);
   fixed, numbers stand as the opus run.
-- **G4 hermes (profile default glm-5.3:speed): FAIL 13.3%** [6.3%,
-  26.2%], 43/45 rubric invocations, 80.0% self-agreement. Two of the six
-  violations share a concrete root cause: the model copy-pasted the
-  worked example payload from SKILL.md (Redis/File-based) instead of the
-  scenario's candidates — the example is so concrete it invites verbatim
-  reuse. Actionable skill fix: make the step-2 example clearly
-  placeholder-shaped, then re-run the gate.
-- **G5 pi: two runs.** deepseek-v4-pro: **VOID — blocked on provider
-  balance** (402 at run 12/45; adapter now raises on provider errors).
-  Re-run on melious glm-5.3:speed (same model as G4, provider added to
-  pi via `~/.pi/agent/models.json`; note melious requires
-  `compat.supportsDeveloperRole: false` — it rejects pi's default
-  `developer` role): **FAIL 15.6%** [7.7%, 28.8%], 45/45 rubric
-  invocations, 93.3% self-agreement. One violation is the same
-  SKILL.md example copy-paste as G4 (rubric scored Redis/File-based on
-  a module-structure scenario).
+- **G4 hermes (glm-5.2:speed): FAIL 20.0%** [10.9%, 33.8%], 45/45 rubric
+  invocations, 82.2% self-agreement. Previous run (glm-5.3:speed) was
+  13.3%; the copy-paste finding is gone (placeholder fix landed in
+  `0f459c5`), but glm-5.2 surfaces a different violation mix:
+  `ESCALATION_WHEN_CONTESTED` (2), `NO_PERCENT` (2),
+  `NO_INVENTED_OPTIONS` (1), `RECOMMENDED_MATCHES_TOP` (3),
+  `RESCORE_TO_DISMISS` (1). The `RECOMMENDED_MATCHES_TOP` cluster is
+  new — the model's rubric-payload recommended label doesn't match its
+  own top-ranked candidate in the composed menu. 9/45 violations.
+- **G5 pi (glm-5.2:speed): FAIL 8.9%** [3.5%, 20.7%], 45/45 rubric
+  invocations, 88.9% self-agreement. Previous run (glm-5.3:speed) was
+  15.6%; the copy-paste finding is gone (placeholder fix landed). 4/45
+  violations: `ESCALATION_WHEN_CONTESTED` (2),
+  `RESCORE_TO_DISMISS` (1), `NO_INVENTED_OPTIONS` (1), `NO_PERCENT` (1).
+  Self-agreement improved (88.9% vs 93.3% — within noise).
 
-Remaining: G3 re-run on the documented default model if the opus numbers are not
-the intended baseline; the SKILL.md example-payload fix for the copy-paste
-finding (observed on both G4 and G5 — the highest-leverage fix, since one
-failure mode accounts for violations in both passes), followed by fresh gate
-runs (changing the skill invalidates recorded numbers).
+The copy-paste finding that spanned G4+G5 on glm-5.3 is **resolved**:
+the placeholder-ized examples in SKILL.md (`0f459c5`) eliminated it on
+both harnesses. Both gates still FAIL the 10% CI gate, but on genuine
+model deviations, not harness bugs.
+
+Remaining: G3 re-run on the documented default model; investigate the
+`RECOMMENDED_MATCHES_TOP` cluster (G4-only, 3 violations — the model's
+rubric payload recommends one label but its composed menu ranks a
+different one first).
 
 ## What does NOT port (documented, don't re-solve)
 
