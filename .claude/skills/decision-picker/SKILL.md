@@ -132,14 +132,17 @@ form depends on the harness:
 | Hermes Agent | `python3 "${HERMES_HOME:-$HOME/.hermes}/skills/<category>/decision-picker/scripts/rubric.py"` via the `terminal` tool — global skills live at a stable location, and profiles relocate via `$HERMES_HOME` automatically |
 | pi | `python3 "$HOME/.pi/agent/skills/decision-picker/scripts/rubric.py"` (or `{baseDir}/scripts/rubric.py` where `{baseDir}` is supported) via `bash` |
 
-The payload contract is identical everywhere — a single JSON object on stdin:
+The payload contract is identical everywhere — a single JSON object on stdin.
+**Use the candidates from the user's scenario, not the labels below** — the
+example uses abstract placeholders (`Option A` / `Option B`) precisely so it
+cannot be copy-pasted as a real payload:
 
 ```bash
 python3 <skill-dir>/scripts/rubric.py <<'JSON'
 {"choices": [
-  {"label": "Redis",         "evidence": 90, "scores": {"fit_to_constraints": 90, "reversibility": 60, "precedent": 90}},
-  {"label": "In-memory LRU", "evidence": 60, "scores": {"fit_to_constraints": 20, "reversibility": 90, "precedent": 20}},
-  {"label": "Managed SaaS",  "feasible": false, "note": "violates the self-hosted requirement"}
+  {"label": "Option A", "evidence": 90, "scores": {"fit_to_constraints": 90, "reversibility": 60, "precedent": 90}},
+  {"label": "Option B", "evidence": 60, "scores": {"fit_to_constraints": 20, "reversibility": 90, "precedent": 20}},
+  {"label": "Option C", "feasible": false, "note": "violates a stated hard constraint"}
 ]}
 JSON
 ```
@@ -258,16 +261,18 @@ menu is already steering the user:
   ranking could go either way."*
 
 Composed shape (labels/descriptions identical on all harnesses; only the tool
-name and field casing differ):
+name and field casing differ). **This is a shape template, not a payload to
+reuse** — labels and descriptions must come from the user's actual candidates
+and your real rubric run:
 
 ```text
-{question}: "Which caching approach? Runner-up case: in-memory LRU needs no new
-infra at all, which matters more if this stays a single box. Excluded: Managed
-SaaS (violates the self-hosted requirement).",
+{question}: "Which approach? Runner-up case: Option B needs no new infra at
+all, which matters more if this stays a single box. Excluded: Option C
+(violates the self-hosted requirement).",
 options: [
-  { label: "Redis (Recommended)", description: "Strong lead — proven at this shape, but adds an infra dependency to operate" },
-  { label: "In-memory LRU",       description: "Contested — zero infra, but the cache dies on every restart" },
-  { label: "File-based",          description: "Weak field — simplest, too slow above light traffic" }
+  { label: "Option A (Recommended)", description: "Strong lead — proven at this shape, but adds an infra dependency to operate" },
+  { label: "Option B",               description: "Contested — zero infra, but the cache dies on every restart" },
+  { label: "Option D",               description: "Weak field — simplest, too slow above light traffic" }
 ]
 ```
 
@@ -308,7 +313,7 @@ autonomous runs. The skill must handle it without inventing a user decision.
 
 ```bash
 python3 <skill-dir>/scripts/rubric.py --log <<'JSON'
-{"pick": "In-memory LRU", "escalated": false, "choices": [ ...the same choices... ]}
+{"pick": "Option B", "escalated": false, "choices": [ ...the same choices... ]}
 JSON
 ```
 

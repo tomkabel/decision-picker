@@ -267,17 +267,17 @@ def cli(payload: dict, *flags: str, env: dict | None = None) -> subprocess.Compl
 
 
 def test_cli_roundtrip_and_no_percentage_shaped_output() -> None:
-    payload = {"choices": [choice("Redis", fit_to_constraints=HIGH, precedent=HIGH),
-                           choice("File-based", fit_to_constraints=LOW)]}
+    payload = {"choices": [choice("Alpha", fit_to_constraints=HIGH, precedent=HIGH),
+                           choice("Beta", fit_to_constraints=LOW)]}
     table = cli(payload)
-    assert table.returncode == 0 and "Redis" in table.stdout
+    assert table.returncode == 0 and "Alpha" in table.stdout
     for line in table.stdout.splitlines():
         # The footer is allowed to name the anti-pattern it is warning about.
         if line.startswith("NOTE:"):
             continue
         assert not looks_like_a_percentage(line), f"score leaked as a number: {line!r}"
     blob = json.loads(cli(payload, "--json").stdout)
-    assert blob["recommended"] == "Redis" and blob["stability"] is not None
+    assert blob["recommended"] == "Alpha" and blob["stability"] is not None
 
 
 def test_cli_reports_bad_input_actionably() -> None:
@@ -296,21 +296,21 @@ def test_log_records_the_decision_and_divergence() -> None:
     """For a decision aid the record is the product; assert it actually exists."""
     with tempfile.TemporaryDirectory() as tmp:
         log = Path(tmp) / "nested" / ".decisions.log"
-        payload = {"choices": [choice("Redis", fit_to_constraints=HIGH),
-                               choice("File-based", fit_to_constraints=LOW)]}
+        payload = {"choices": [choice("Alpha", fit_to_constraints=HIGH),
+                               choice("Beta", fit_to_constraints=LOW)]}
         assert cli(payload, "--log", str(log)).returncode == 0
-        assert cli(payload | {"pick": "File-based", "escalated": True},
+        assert cli(payload | {"pick": "Beta", "escalated": True},
                    "--log", str(log)).returncode == 0
         # env var is the default for --log, so a live eval captures every run
-        assert cli(payload | {"pick": "Redis"}, env={"DECISION_PICKER_LOG": str(log)}).returncode == 0
+        assert cli(payload | {"pick": "Alpha"}, env={"DECISION_PICKER_LOG": str(log)}).returncode == 0
 
         rows = [json.loads(x) for x in log.read_text().splitlines()]
         assert [r["kind"] for r in rows] == ["ranking", "decision", "decision"]
         assert rows[0]["pick"] is None and rows[0]["diverged"] is None
-        assert rows[1]["pick"] == "File-based" and rows[1]["diverged"] is True
+        assert rows[1]["pick"] == "Beta" and rows[1]["diverged"] is True
         assert rows[1]["escalated"] is True
         assert rows[2]["diverged"] is False
-        assert rows[1]["verdict"]["recommended"] == "Redis"
+        assert rows[1]["verdict"]["recommended"] == "Alpha"
         assert rows[1]["choices"][0]["evidence"] == MID
 
 
@@ -323,7 +323,7 @@ def test_timed_out_logging() -> None:
     """
     with tempfile.TemporaryDirectory() as td:
         log = Path(td) / "d.log"
-        payload = {"choices": [choice("Redis", fit_to_constraints=HIGH, precedent=HIGH)]}
+        payload = {"choices": [choice("Alpha", fit_to_constraints=HIGH, precedent=HIGH)]}
 
         assert cli(payload, "--log", str(log)).returncode == 0
         assert cli(payload | {"timed_out": True}, "--log", str(log)).returncode == 0

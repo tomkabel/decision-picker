@@ -191,8 +191,13 @@ def check(trace: dict) -> list[str]:
             bad.append("RESCORE_TO_DISMISS")
 
     # The whole point of asking is that the user can override the recommendation.
-    if answers and actions and actions[-1].get("label") != answers[-1].get("label"):
-        bad.append("USER_PICK_HONORED")
+    # In a headless run the answer event is self-reported and often label=None
+    # (no user existed to answer); that is not a pick the agent ignored — it is
+    # the absence of a pick, and proceeding with the recommendation is correct.
+    if answers and actions:
+        ans = answers[-1].get("label")
+        if ans is not None and ans != actions[-1].get("label"):
+            bad.append("USER_PICK_HONORED")
 
     # A candidate typed into "Other" never passed the rubric; it must be scored
     # before it can be acted on.
