@@ -287,9 +287,25 @@ prevent a fully literal single file:
 ```
 claude-select/.claude/skills/decision-picker        (source of truth, as now)
 ~/.hermes: skills.external_dirs -> .claude/skills   (config registration)
-~/.pi/agent/skills/decision-picker                   (pi settings skills[] or copy)
+~/.agents/skills/decision-picker                     (real dir; SKILL.md + scripts symlinked to the repo)
+~/.claude/skills/decision-picker -> ../../.agents/skills/decision-picker
+~/.pi/agent/skills/decision-picker -> ../../../.agents/skills/decision-picker
 pi extension: pi install <path-or-git-source>       (registered, not dropped in a dir)
 ```
+
+**Global install, verified 2026-09-19** (probe: ask each CLI from `/tmp` to
+list its skills; all three now name `decision-picker`). The shared
+`~/.agents/skills` entry is a **real directory containing symlinks** to the
+repo's `SKILL.md` and `scripts/` — not a symlinked directory — so it survives
+both scanner families (pathlib `rglob`, which does not descend into symlinked
+dirs, and `os.walk(followlinks=True)`, which does).
+
+pi's `settings.json` `skills[]` did **not** work as a discovery mechanism
+here: pointing it at the skills parent dir, and then at the skill dir itself,
+absolute path in both cases, left the skill absent from pi's skill list. pi
+discovers from `~/.pi/agent/skills/` and follows symlinked entries there
+(every other installed pi skill is exactly that shape). The dead `skills[]`
+entry was removed; `packages[]` (the `pi install`ed extension) stays.
 
 **Why not symlinks** (this reverses the earlier draft, which claimed "Hermes
 follows symlinks fine"): Hermes has *two* scanners with different semantics.
