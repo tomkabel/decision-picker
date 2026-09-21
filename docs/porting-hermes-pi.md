@@ -1,8 +1,18 @@
 # Porting decision-picker to Hermes and pi
 
-Analysis of what `claude-select` depends on, and how to build the equivalent
-for Hermes Agent (Nous Research) and pi (badlogic's pi-mono coding agent,
-v0.84.4, verified installed at `~/.pi`).
+Analysis of what `decision-picker` (repo: `decision-picker`, formerly
+`claude-select`) depends on, and how to build the equivalent for Hermes Agent
+(Nous Research) and pi (badlogic's pi-mono coding agent, v0.84.4, verified
+installed at `~/.pi`).
+
+> **Repository rename, 2026-09-21.** The repo directory, GitHub name, and the
+> README's clone/CI URLs moved from `claude-select` to `decision-picker`: the
+> name described a Claude-only skill that no longer exists now that the same
+> SKILL.md is ported to Hermes and pi, and it disagreed with the skill it
+> contains. Local registration paths were updated with it — the two symlinks in
+> `~/.agents/skills/decision-picker/` were rewritten relative (so the next rename
+> does not break them), `~/.pi/agent/settings.json` `packages[]`, and
+> `skills.external_dirs` in `~/.hermes/config.yaml`.
 
 The core finding up front: **the porting surface is small and exactly
 identifiable.** `rubric.py` is stdlib-only Python with a stdin-JSON/stdout
@@ -277,15 +287,25 @@ prevent a fully literal single file:
    (≤4 options, first/recommended, Other is a new candidate, no numbers,
    disclosures in the body). All the harness-independent rules stay single-
    sourced.
-2. **Hermes' 60-char description hardline** (if contributing upstream).
-   A short description is fine on Claude and pi too — trigger richness can
-   move to the body's "When to Use" section, which is where pi/Claude models
-   read it anyway.
+2. **Hermes' 60-char description limit — an *authoring* rule, not a loader
+   rule.** Read from source, not assumed: `agent/skill_utils.py` sets
+   `SKILL_PROMPT_DESC_LIMIT = 60` and `extract_skill_description()` returns
+   `desc[:57] + "..."` for the system-prompt skill index, while
+   `tools/skill_manager_tool.py` sets `MAX_DESCRIPTION_LENGTH = 1024` and only
+   *hard-rejects* a >60-char description when `new_skill` is set — i.e. when
+   `skill_manage` creates a skill inside Hermes. This repo's SKILL.md is
+   authored in the repo and discovered through `skills.external_dirs`, so the
+   hardline never applies to it; the 57-char truncation is a display cost on
+   Hermes only. **Resolution (2026-09-21):** the description carries a complete
+   self-contained trigger in its first 56 characters ("Choose between options
+   with a scored, ask-first rubric.") followed by the richer trigger phrasing
+   Claude Code and pi read in full. That is strictly more trigger surface than
+   the terse form on two harnesses at no cost on the third.
 
 **Deployment layout** — one canonical repo; registration, not symlinks:
 
 ```
-claude-select/.claude/skills/decision-picker        (source of truth, as now)
+decision-picker/.claude/skills/decision-picker        (source of truth, as now)
 ~/.hermes: skills.external_dirs -> .claude/skills   (config registration)
 ~/.agents/skills/decision-picker                     (real dir; SKILL.md + scripts symlinked to the repo)
 ~/.claude/skills/decision-picker -> ../../.agents/skills/decision-picker

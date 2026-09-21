@@ -2,12 +2,14 @@
 
 # decision-picker
 
-**A Claude Code skill that turns a list of options into an interactive terminal choice — with a transparent multi-criteria ranking, a measured confidence in that ranking, and a default the user can always override.**
+**A portable agent skill — Claude Code, Hermes Agent, and pi — that turns a list of options into an interactive terminal choice with a transparent multi-criteria ranking, a measured stability in that ranking, and a default the user can always override.**
 
-[![CI](https://github.com/tomkabel/claude-select/actions/workflows/test.yml/badge.svg)](https://github.com/tomkabel/claude-select/actions/workflows/test.yml)
+[![CI](https://github.com/tomkabel/decision-picker/actions/workflows/test.yml/badge.svg)](https://github.com/tomkabel/decision-picker/actions/workflows/test.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)](#zero-dependencies)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-skill-D97757)](https://docs.claude.com/en/docs/claude-code/skills)
+[![Hermes Agent](https://img.shields.io/badge/Hermes%20Agent-skill-4B3B8F)](https://hermes-agent.nousresearch.com/docs)
+[![pi](https://img.shields.io/badge/pi-extension-2D7D6E)](https://github.com/badlogic/pi-mono)
 [![Agent Skills](https://img.shields.io/badge/Agent%20Skills-spec--compliant-8A2BE2)](https://agentskills.io/)
 
 </div>
@@ -21,7 +23,9 @@ hair, or whether it checked anything before deciding.
 `decision-picker` makes that step legible. It decomposes the call into weighted
 criteria with observable anchors, gates out anything violating a hard constraint,
 **measures** whether the lead survives its own made-up weights, and hands the
-choice back to you through the native `AskUserQuestion` picker.
+choice back to you through the harness's native interactive-ask tool
+(`AskUserQuestion` on Claude Code, `clarify` on Hermes, the `decision_picker`
+extension on pi).
 
 ```console
 $ # the agent runs this internally, then renders the result as a menu
@@ -80,17 +84,40 @@ things make that true here:
 ## Install
 
 The skill directory is self-contained — scripts address themselves through
-`${CLAUDE_SKILL_DIR}`, so a symlink is the whole install:
+`${CLAUDE_SKILL_DIR}`, so registration is the whole install:
 
 ```bash
-git clone https://github.com/tomkabel/claude-select.git
-cd claude-select
+git clone https://github.com/tomkabel/decision-picker.git
+cd decision-picker
+```
 
-# personal (all projects)
+**Claude Code** — symlink, personal or project-local:
+
+```bash
 ln -s "$PWD/.claude/skills/decision-picker" ~/.claude/skills/decision-picker
+# or, from inside another project:
+ln -s /path/to/decision-picker/.claude/skills/decision-picker .claude/skills/decision-picker
+```
 
-# or project-local, from inside another project
-ln -s /path/to/claude-select/.claude/skills/decision-picker .claude/skills/decision-picker
+**Hermes Agent** — register the directory, don't symlink it. Hermes has two
+scanners: the runtime loader follows symlinked dirs, but `skill_manage` /
+`skill_view` discovery (`Path.rglob`) does not, so a symlinked skill loads yet
+can't be edited through the skill tools:
+
+```bash
+hermes config set skills.external_dirs '["'"$PWD"'/.claude/skills"]'
+```
+
+**pi** — a real directory in `~/.agents/skills/decision-picker` holding symlinks
+to this repo's `SKILL.md` and `scripts/` (not a symlinked directory — pathlib's
+`rglob` won't descend into one), plus the extension as a package:
+
+```bash
+mkdir -p ~/.agents/skills/decision-picker
+ln -sfn "$PWD/.claude/skills/decision-picker/SKILL.md" ~/.agents/skills/decision-picker/SKILL.md
+ln -sfn "$PWD/.claude/skills/decision-picker/scripts" ~/.agents/skills/decision-picker/scripts
+ln -sfn ../../.agents/skills/decision-picker ~/.pi/agent/skills/decision-picker
+pi install "$PWD"
 ```
 
 Verify it registered:
@@ -99,9 +126,9 @@ Verify it registered:
 claude plugin validate .claude/skills   # → ✔ Validation passed
 ```
 
-Then just give Claude some options. The skill triggers on its own, or invoke it
-explicitly with `/decision-picker`. Add `/panel` to any request to force the
-review step.
+Then just give your agent some options. The skill triggers on its own, or invoke
+it explicitly with `/decision-picker` (Claude Code, pi) or `skill_view`
+(Hermes). Add `/panel` to any request to force the review step.
 
 ### Zero dependencies
 
@@ -120,7 +147,7 @@ flowchart TD
     E --> F{escalate?}
     F -->|"a reason fired, the user asked,<br/>or the blast radius is large"| G[falsify with a tool<br/>then adversarial review]
     F -->|no| H
-    G --> H[AskUserQuestion · top 4<br/>bands, no numbers]
+    G --> H[native ask tool · top 4<br/>bands, no numbers]
     H --> I[user's pick wins]
     I --> J[(.decisions.log)]
 ```

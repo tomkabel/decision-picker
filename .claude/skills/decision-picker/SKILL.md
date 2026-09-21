@@ -1,6 +1,6 @@
 ---
 name: decision-picker
-description: Choose between options with a scored, ask-first rubric.
+description: Choose between options with a scored, ask-first rubric. Use when the user hands you several candidate options and wants a reasoned, defensible pick — a transparent multi-criteria ranking, an overridable default, and an escalation path for close or high-stakes calls.
 allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rubric.py:*)
 version: 0.2.0
 author: Tom Kristian Abel (tkabel), Hermes Agent
