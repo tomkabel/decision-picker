@@ -399,15 +399,22 @@ en route and the affected attempts voided, see above):
   `unverified-evidence` verdicts. Model resolution was broken during
   this run (`--model` dead → opus default, not the documented sonnet);
   fixed, numbers stand as the opus run.
-- **G4 hermes (glm-5.2:speed): FAIL 20.0%** [10.9%, 33.8%], 45/45 rubric
-  invocations, 82.2% self-agreement. Previous run (glm-5.3:speed) was
-  13.3%; the copy-paste finding is gone (placeholder fix landed in
-  `0f459c5`), but glm-5.2 surfaces a different violation mix:
-  `ESCALATION_WHEN_CONTESTED` (2), `NO_PERCENT` (2),
-  `NO_INVENTED_OPTIONS` (1), `RECOMMENDED_MATCHES_TOP` (3),
-  `RESCORE_TO_DISMISS` (1). The `RECOMMENDED_MATCHES_TOP` cluster is
-  new — the model's rubric-payload recommended label doesn't match its
-  own top-ranked candidate in the composed menu. 9/45 violations.
+- **G3 claude (sonnet-4-5): PARTIAL — 6.7% break rate** [2.3%, 17.9%],
+  but **0/45 rubric invocations** (skill never activated). The
+  violations are all `INJECTION_SURFACED` on the injection-candidate
+  scenario, not protocol breaks. This is a skill-activation failure,
+  not a protocol-break result. Run was interrupted (subscription expired
+  mid-pass). Needs a re-run with the skill confirmed active before the
+  number means anything.
+- **G4 hermes (glm-5.2:speed): FAIL 17.8%** [9.3%, 31.3%], 45/45 rubric
+  invocations, 84.4% self-agreement. Full `--repeat 3` pass (45 runs,
+  2026-09-21). Violation mix: `RECOMMENDED_MATCHES_TOP` (5) — the model's
+  rubric payload recommends one label but its composed menu ranks a
+  different one first; `NO_INVENTED_OPTIONS` (3) — the model invented
+  options not in the input set (all on `hard-constraint-excludes-favourite`).
+  The previous run (20.0%, [10.9%, 33.8%]) had a broader violation mix;
+  the `ESCALATION_WHEN_CONTESTED`, `NO_PERCENT`, and `RESCORE_TO_DISMISS`
+  violations did not recur. 8/45 violations.
 - **G5 pi (glm-5.2:speed): FAIL 8.9%** [3.5%, 20.7%], 45/45 rubric
   invocations, 88.9% self-agreement. Previous run (glm-5.3:speed) was
   15.6%; the copy-paste finding is gone (placeholder fix landed). 4/45
@@ -420,10 +427,14 @@ the placeholder-ized examples in SKILL.md (`0f459c5`) eliminated it on
 both harnesses. Both gates still FAIL the 10% CI gate, but on genuine
 model deviations, not harness bugs.
 
-Remaining: G3 re-run on the documented default model; investigate the
-`RECOMMENDED_MATCHES_TOP` cluster (G4-only, 3 violations — the model's
-rubric payload recommends one label but its composed menu ranks a
-different one first).
+Remaining: G3 re-run on sonnet produced 0/45 rubric invocations (skill
+never activated) — the 6.7% break rate is all `INJECTION_SURFACED`, not
+protocol breaks. Needs a re-run with skill activation confirmed.
+Investigate the `RECOMMENDED_MATCHES_TOP` cluster (now 5 violations on
+G4 — the model's rubric payload recommends one label but its composed
+menu ranks a different one first); investigate the `NO_INVENTED_OPTIONS`
+cluster (3 violations, all on `hard-constraint-excludes-favourite` —
+the model invents options not in the input set).
 
 ## What does NOT port (documented, don't re-solve)
 

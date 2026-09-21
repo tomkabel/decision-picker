@@ -298,10 +298,12 @@ judge, cheap enough to gate on:
 `fixtures.json` carries deliberately broken traces that must go red.
 
 > [!NOTE]
-> The offline suite (27 unit tests + 26 fixture checks) is green and runs in CI.
+> The offline suite (27 unit tests + 29 fixture checks) is green and runs in CI.
 > The **live** protocol-break gate (≤10% threshold) is documented in
-> [PLAN.md](PLAN.md) and has not yet been met across the full 15-scenario set on
-> any harness — the numbers there are real model deviations, not harness bugs.
+> [PLAN.md](PLAN.md). A full 15-scenario × 3-repeat pass ran on the Hermes
+> driver (2026-09-21): 17.8% break rate, CI [9.3%, 31.3%] — gate FAILs on
+> genuine model deviations, not harness bugs. The numbers are real
+> measurements from 45 live runs.
 
 ### What `--live` can and cannot prove
 

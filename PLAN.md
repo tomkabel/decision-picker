@@ -409,14 +409,20 @@ Spec tightened rather than the assertion loosened.
 
 ### Still open
 
-- **A full `--live --repeat 3` pass across all 15 scenarios** has not been run —
-  one scenario has. The break-rate and self-agreement numbers are not yet real,
-  and the gate has not been exercised at n large enough to mean anything.
-- **`RECOMMENDED_MATCHES_TOP` cluster** (G4-only, 3 violations). The model's
-  rubric payload recommends one label but its composed menu ranks a different
-  one first. Likely a prompt-level issue in how the agent reads the `--json`
-  output back into the ask. Needs a dedicated fixture that catches this
-  specific mismatch pattern.
+- **G3 (Claude/sonnet) re-run incomplete.** The partial run produced 0/45
+  rubric invocations — the skill never activated. The 6.7% break rate is
+  all `INJECTION_SURFACED`, not protocol breaks. Needs a re-run with skill
+  activation confirmed (subscription expired mid-pass).
+- **G4 (Hermes) full `--repeat 3` pass ran 2026-09-21:** 45/45 rubric
+  invocations, 17.8% break rate [9.3%, 31.3% Wilson CI], 84.4%
+  self-agreement. Gate still FAILs (CI upper bound 31.3% > 10%). The
+  violation mix narrowed compared to the previous run:
+  `RECOMMENDED_MATCHES_TOP` (5, up from 3) and `NO_INVENTED_OPTIONS`
+  (3, up from 1). The `ESCALATION_WHEN_CONTESTED`, `NO_PERCENT`, and
+  `RESCORE_TO_DISMISS` violations did not recur. The
+  `RECOMMENDED_MATCHES_TOP` cluster remains the dominant failure mode —
+  the model's rubric payload recommends one label but its composed menu
+  ranks a different one first.
 - **Pairwise scoring** (recorded in v2 as raised 2/5, never resolved). Declined
   for now: with ≤4 options all-pairs is 6 comparisons per criterion, and the
   per-criterion cross-option pass already captures most of the halo benefit. The
