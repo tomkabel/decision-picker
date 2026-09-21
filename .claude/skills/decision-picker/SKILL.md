@@ -169,12 +169,14 @@ is an artifact of numbers you made up.
 
 ### 3. Escalate when the call is genuinely close, or when asked
 
+**If the script printed `ESCALATE`, you MUST escalate before presenting the ask.** This is not optional, not a suggestion, and not subject to your own judgment about whether the gap is "big enough." The script already made that judgment — overruling it is the exact failure mode the rubric exists to prevent.
+
 Escalate if **any** of these hold:
 
 - **The script said so.** Any `ESCALATE` line. Its reasons are `not-separable`
   (the lead does not survive noise), `weak-field` (nothing here is good — go back
   to framing), and `unverified-evidence` (your top pick rests on something you
-  never checked).
+  never checked). If the reason is unverified-evidence, escalation is mandatory and the ONLY acceptable escalation is a falsifying tool call (option 1 below). A second opinion without new evidence is not a valid response to "you never looked."
 - **The user asked.** Judge this from what they actually said. "Can you get
   someone else to weigh in?", "I'm not convinced", "double-check this" all
   count. Do not pattern-match a fixed phrase list — you are the language model;
@@ -349,6 +351,7 @@ JSON
   the whole point.
 - **Adding personas to buy confidence.** Four voices from one model is one
   opinion. If you need more certainty, go get evidence.
+- Reading `ESCALATE — not-separable` and deciding the gap is "fine" so you skip escalation. The stability resampling already answered whether the gap is fine — if it says escalate, you escalate.
 
 ## Testing
 

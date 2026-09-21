@@ -151,6 +151,22 @@ def check(trace: dict) -> list[str]:
                 o.get("label", "").replace(RECOMMENDED, "").strip() == top for o in marked
             ):
                 bad.append("RECOMMENDED_MATCHES_TOP")
+        # Position-aware check: the recommended option must be first.
+        # On Hermes there is no explicit "(Recommended)" marker — position
+        # IS the marker (SKILL.md: "put the recommended option first"). And
+        # even when a marker is present, a marked option sitting in position 2+
+        # is a silent position mismatch the label-only check above misses.
+        if prior_rubric and options:
+            top = prior_rubric.get("recommended")
+            if top:
+                if marked:
+                    # The explicitly-marked option must be at position 0.
+                    if RECOMMENDED not in options[0].get("label", ""):
+                        bad.append("RECOMMENDED_MATCHES_TOP")
+                else:
+                    # No explicit marker: position 0 must be the recommendation.
+                    if options[0].get("label", "").replace(RECOMMENDED, "").strip() != top:
+                        bad.append("RECOMMENDED_MATCHES_TOP")
 
         # The agent may not quietly substitute options the user never offered.
         offered = {o.get("label", "").replace(RECOMMENDED, "").strip() for o in options}

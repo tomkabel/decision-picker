@@ -1144,5 +1144,120 @@
         }
       ]
     }
+  },
+  {
+    "name": "REGRESSION-recommended-right-label-wrong-position",
+    "expect_violations": [
+      "RECOMMENDED_MATCHES_TOP"
+    ],
+    "trace": {
+      "scenario": "wrong-position",
+      "candidates": [
+        "A",
+        "B"
+      ],
+      "events": [
+        {
+          "type": "rubric",
+          "recommended": "A",
+          "separated": true,
+          "reasons": [],
+          "excluded": []
+        },
+        {
+          "type": "escalation",
+          "ran": false
+        },
+        {
+          "type": "ask",
+          "options": [
+            {
+              "label": "B",
+              "description": "Contested \\u2014 fine"
+            },
+            {
+              "label": "A (Recommended)",
+              "description": "Strong lead \\u2014 fine"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "clean-recommended-first-position-no-marker",
+    "expect_violations": [],
+    "trace": {
+      "scenario": "position-marker",
+      "candidates": [
+        "A",
+        "B"
+      ],
+      "events": [
+        {
+          "type": "rubric",
+          "recommended": "A",
+          "separated": true,
+          "reasons": [],
+          "excluded": []
+        },
+        {
+          "type": "escalation",
+          "ran": false
+        },
+        {
+          "type": "ask",
+          "options": [
+            {
+              "label": "A",
+              "description": "Strong lead \\u2014 fine"
+            },
+            {
+              "label": "B",
+              "description": "Contested \\u2014 fine"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "REGRESSION-recommended-wrong-first-no-marker",
+    "expect_violations": [
+      "RECOMMENDED_MATCHES_TOP"
+    ],
+    "trace": {
+      "scenario": "wrong-position-no-marker",
+      "candidates": [
+        "A",
+        "B"
+      ],
+      "events": [
+        {
+          "type": "rubric",
+          "recommended": "A",
+          "separated": true,
+          "reasons": [],
+          "excluded": []
+        },
+        {
+          "type": "escalation",
+          "ran": false
+        },
+        {
+          "type": "ask",
+          "options": [
+            {
+              "label": "B",
+              "description": "Contested \\u2014 fine"
+            },
+            {
+              "label": "A",
+              "description": "Strong lead \\u2014 fine"
+            }
+          ]
+        }
+      ]
+    }
   }
 ]
