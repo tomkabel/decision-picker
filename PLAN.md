@@ -1,5 +1,7 @@
 # decision-picker — remediation plan (v2)
 
+> This is a design history document. Open items are noted but the plan is complete through Phase 10.
+
 Supersedes the v1 phase plan (phases 0–3a, all shipped: commits `4b57bb3`,
 `214dfa3`, `a1fc725`). v1 built a weighted rubric, a panel-escalation gate, and
 a tournament bracket. A senior review plus a five-model adversarial panel found
@@ -12,9 +14,9 @@ This plan is therefore **net-deletion**. Two of the three scripts go away.
 
 ## Evidence base
 
-Reviewed by five flagship reasoning models via the `pi` harness against the
-openlux endpoint (custom provider config: `~/.pi/agent/models.json`, provider
-`openlux`, `api: openai-completions`):
+Reviewed by five flagship reasoning models via the `pi` harness against a
+custom provider endpoint (provider config: `<pi-config-path>`,
+`api: openai-completions`):
 
 | Model | Provider |
 |---|---|
@@ -24,7 +26,7 @@ openlux endpoint (custom provider config: `~/.pi/agent/models.json`, provider
 | `glm-5.3` | Z.ai |
 | `grok-4.6` | xAI |
 
-Reproduce: `cd docs/review-2026-09-04 && pi --model openlux/<id> --thinking high
+Reproduce: `cd docs/review-2026-09-04 && pi --model <provider>/<id> --thinking high
 --no-tools --no-session -p "$(cat BRIEF.md)"`. Full verbatim responses are in
 [`docs/review-2026-09-04/`](docs/review-2026-09-04/).
 
@@ -410,6 +412,11 @@ Spec tightened rather than the assertion loosened.
 - **A full `--live --repeat 3` pass across all 15 scenarios** has not been run —
   one scenario has. The break-rate and self-agreement numbers are not yet real,
   and the gate has not been exercised at n large enough to mean anything.
+- **`RECOMMENDED_MATCHES_TOP` cluster** (G4-only, 3 violations). The model's
+  rubric payload recommends one label but its composed menu ranks a different
+  one first. Likely a prompt-level issue in how the agent reads the `--json`
+  output back into the ask. Needs a dedicated fixture that catches this
+  specific mismatch pattern.
 - **Pairwise scoring** (recorded in v2 as raised 2/5, never resolved). Declined
   for now: with ≤4 options all-pairs is 6 comparisons per criterion, and the
   per-criterion cross-option pass already captures most of the halo benefit. The

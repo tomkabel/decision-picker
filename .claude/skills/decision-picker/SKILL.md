@@ -6,6 +6,12 @@ version: 0.2.0
 author: Tom Kristian Abel (tkabel), Hermes Agent
 license: MIT
 platforms: [linux, macos, windows]
+when_to_use: |
+  - User hands you several options and wants a reasoned, defensible pick
+  - User says "choose", "pick", "decide between", "which option", "help me choose"
+  - User wants tradeoffs made visible before committing to a direction
+  - Do NOT use for single-option decisions or trivial reversible choices
+compatibility: Requires Python >= 3.10. No packages. Works with Claude Code, Hermes Agent, or pi.
 metadata:
   origin: custom
   hermes:

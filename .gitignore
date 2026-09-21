@@ -1,5 +1,24 @@
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.pyc
+
+# Test and coverage artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Linting and type-checking caches
+.ruff_cache/
+.mypy_cache/
+
+# Benchmark results
+.benchmarks/
+
+# Packaging and distribution
+*.egg-info/
+dist/
+build/
+.tox/
 
 # Live-eval output. The old pattern was `scripts/eval/traces/`, which is anchored
 # to this file's directory and so matched nothing — traces were committed.

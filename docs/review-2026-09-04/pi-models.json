@@ -1,13 +1,13 @@
 {
   "providers": {
-    "openlux": {
-      "baseUrl": "https://api.openlux.ai/v1",
+    "<provider>": {
+      "baseUrl": "<endpoint>",
       "api": "openai-completions",
-      "apiKey": "$OPENAI_API_KEY",
+      "apiKey": "<env-api-key>",
       "models": [
         {
           "id": "gpt-5.6-luna",
-          "name": "GPT-5.6 Luna (openlux)",
+          "name": "GPT-5.6 Luna",
           "reasoning": true,
           "input": ["text"],
           "contextWindow": 400000,
@@ -16,7 +16,7 @@
         },
         {
           "id": "gpt-5.6-terra-max",
-          "name": "GPT-5.6 Terra Max (openlux)",
+          "name": "GPT-5.6 Terra Max",
           "reasoning": true,
           "input": ["text"],
           "contextWindow": 400000,
@@ -25,7 +25,7 @@
         },
         {
           "id": "kimi-k3",
-          "name": "Kimi K3 (openlux)",
+          "name": "Kimi K3",
           "reasoning": true,
           "input": ["text"],
           "contextWindow": 256000,
@@ -34,7 +34,7 @@
         },
         {
           "id": "gemini-3.1-pro-preview",
-          "name": "Gemini 3.1 Pro (openlux)",
+          "name": "Gemini 3.1 Pro",
           "reasoning": true,
           "input": ["text"],
           "contextWindow": 1000000,
@@ -43,7 +43,7 @@
         },
         {
           "id": "glm-5.3",
-          "name": "GLM-5.3 (openlux)",
+          "name": "GLM-5.3",
           "reasoning": true,
           "input": ["text"],
           "contextWindow": 200000,
@@ -52,7 +52,7 @@
         },
         {
           "id": "grok-4.6",
-          "name": "Grok 4.6 (openlux)",
+          "name": "Grok 4.6",
           "reasoning": true,
           "input": ["text"],
           "contextWindow": 256000,

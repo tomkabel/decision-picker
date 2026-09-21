@@ -1,0 +1,54 @@
+name: Bug report
+description: Report a problem with the decision-picker skill or its scripts.
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: harness
+    attributes:
+      label: Harness
+      description: Which harness did this happen in?
+      options:
+        - Claude Code
+        - Hermes Agent
+        - pi
+        - Not sure / other
+    validations:
+      required: true
+  - type: textarea
+    id: scenario
+    attributes:
+      label: Scenario
+      description: What were you trying to decide? Paste the prompt / options if you can.
+      placeholder: "e.g. Asked the agent to pick between Redis, in-memory LRU, and file-based caching."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead? Paste any error output or the ranking you got.
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Is this the script or the skill protocol?
+      description: The rubric scripts are deterministic Python; the skill protocol is the SKILL.md the agent follows.
+      options:
+        - Script (rubric.py / check_trace.py)
+        - Skill protocol (SKILL.md / agent behavior)
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Python version (if running scripts locally)
+      placeholder: "e.g. 3.13"

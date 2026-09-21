@@ -1,5 +1,3 @@
-<div align="center">
-
 # decision-picker
 
 **A portable agent skill — Claude Code, Hermes Agent, and pi — that turns a list of options into an interactive terminal choice with a transparent multi-criteria ranking, a measured stability in that ranking, and a default the user can always override.**
@@ -12,9 +10,12 @@
 [![pi](https://img.shields.io/badge/pi-extension-2D7D6E)](https://github.com/badlogic/pi-mono)
 [![Agent Skills](https://img.shields.io/badge/Agent%20Skills-spec--compliant-8A2BE2)](https://agentskills.io/)
 
-</div>
-
 ---
+
+## Prerequisites
+
+- Python >= 3.10 (standard library only — no packages, no virtualenv)
+- One of: Claude Code, Hermes Agent, or pi (for the interactive ask surface)
 
 Ask an agent to pick between four options and you get a confident paragraph. You
 have no idea which criteria it weighed, whether the runner-up lost by a mile or a
@@ -56,6 +57,7 @@ this stays a single box. Excluded: Managed SaaS (violates the self-hosted requir
 ## Contents
 
 - [Why](#why)
+- [Prerequisites](#prerequisites)
 - [Install](#install)
 - [How it works](#how-it-works)
 - [The rubric](#the-rubric)
@@ -63,6 +65,9 @@ this stays a single box. Excluded: Managed SaaS (violates the self-hosted requir
 - [Testing](#testing)
 - [Project layout](#project-layout)
 - [Design history](#design-history)
+- [Changelog](#changelog)
+- [Acknowledgments](#acknowledgments)
+- [Contributing](#contributing)
 
 ## Why
 
@@ -120,7 +125,7 @@ ln -sfn ../../.agents/skills/decision-picker ~/.pi/agent/skills/decision-picker
 pi install "$PWD"
 ```
 
-Verify it registered:
+Verify it registered (optional — requires Claude Code installed):
 
 ```bash
 claude plugin validate .claude/skills   # → ✔ Validation passed
@@ -292,6 +297,12 @@ judge, cheap enough to gate on:
 
 `fixtures.json` carries deliberately broken traces that must go red.
 
+> [!NOTE]
+> The offline suite (27 unit tests + 26 fixture checks) is green and runs in CI.
+> The **live** protocol-break gate (≤10% threshold) is documented in
+> [PLAN.md](PLAN.md) and has not yet been met across the full 15-scenario set on
+> any harness — the numbers there are real model deviations, not harness bugs.
+
 ### What `--live` can and cannot prove
 
 > [!NOTE]
@@ -363,6 +374,16 @@ That process was a net **deletion**: two of the three original scripts are gone.
 They applied determinism to steps that were never uncertain, while the one step
 with real variance had no anchors at all.
 
+## Changelog
+
+See [git releases](https://github.com/tomkabel/decision-picker/releases) and [PLAN.md](PLAN.md) for design history.
+
+## Acknowledgments
+
+The current design emerged from an adversarial review by five flagship reasoning
+models across five different families — see [`docs/review-2026-09-04/`](docs/review-2026-09-04/).
+Built on the [Agent Skills](https://agentskills.io/) open standard.
+
 ## Contributing
 
 Issues and PRs welcome. Two house rules:
@@ -376,5 +397,4 @@ CI runs them on Python 3.10 and 3.13.
 
 ## License
 
-Not yet declared — all rights reserved by default until a `LICENSE` file is
-added. If you intend this to be usable by others, add one.
+MIT — see [LICENSE](LICENSE).

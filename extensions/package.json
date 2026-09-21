@@ -1,0 +1,17 @@
+{
+  "name": "decision-picker",
+  "version": "0.2.0",
+  "description": "pi extension for the decision-picker skill",
+  "main": "decision-picker.ts",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  }
+}

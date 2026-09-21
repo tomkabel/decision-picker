@@ -6,17 +6,24 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.os == 'macos-latest' }}
     strategy:
       matrix:
         # The skill claims Python >=3.10 and ships stdlib-only. Test the floor,
-        # or the claim is decoration.
+        # or the claim is decoration. macOS is experimental for now.
+        os: [ubuntu-latest, macos-latest]
         python-version: ["3.10", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+
+      - name: ruff lint
+        run: |
+          pip install ruff
+          ruff check .claude/skills/decision-picker/scripts/
 
       - name: unit tests (validation, gating, ranking)
         run: python3 .claude/skills/decision-picker/scripts/test_rubric.py
@@ -56,3 +63,14 @@ jobs:
         run: npm install -g @anthropic-ai/claude-code
       - name: validate skill frontmatter
         run: claude plugin validate .claude/skills
+
+  extension-typecheck:
+    runs-on: ubuntu-latest
+    if: hashFiles('extensions/package.json') != ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: install and typecheck
+        run: cd extensions && npm install && npx tsc --noEmit

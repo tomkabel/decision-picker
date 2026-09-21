@@ -241,7 +241,7 @@ directory with `index.ts` + `package.json` if it grows).
    `/skill:decision-picker` interactive command exists for users and is
    worth a README line. **Pin the model** (`--model` / `PI_EVAL_MODEL`):
    pi's default-model resolution scans environment API keys, so inside a
-   Hermes session it resolves `HERMES_CUSTOM_API_*` keys to a provider that
+   Hermes session it resolves `<env-api-key>` keys to a provider that
    errors instantly (`stopReason:"error"`, empty assistant content, exit 0)
    — observed live on the first full pass (0/45 rubric runs, vacuous
    "clean" verdicts).
