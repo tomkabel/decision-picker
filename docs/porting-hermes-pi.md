@@ -82,7 +82,7 @@ hermes-agent repo.
    allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rubric.py:*)
    version: 0.2.0
    author: Tom Kristian Abel (tkabel), Hermes Agent
-   license: MIT
+   license: MPL-2.0
    platforms: [linux, macos, windows]
    metadata:
      origin: custom

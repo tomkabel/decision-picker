@@ -4,7 +4,7 @@ description: Choose between options with a scored, ask-first rubric. Use when th
 allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rubric.py:*)
 version: 0.2.0
 author: Tom Kristian Abel (tkabel), Hermes Agent
-license: MIT
+license: MPL-2.0
 platforms: [linux, macos, windows]
 when_to_use: |
   - User hands you several options and wants a reasoned, defensible pick
