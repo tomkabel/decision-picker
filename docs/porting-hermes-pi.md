@@ -1,16 +1,16 @@
-# Porting decision-picker to Hermes and pi
+# Porting tiltrank to Hermes and pi
 
-Analysis of what `decision-picker` (repo: `decision-picker`, formerly
+Analysis of what `tiltrank` (repo: `tiltrank`, formerly
 `claude-select`) depends on, and how to build the equivalent for Hermes Agent
 (Nous Research) and pi (badlogic's pi-mono coding agent, v0.84.4, verified
 installed at `~/.pi`).
 
 > **Repository rename, 2026-09-21.** The repo directory, GitHub name, and the
-> README's clone/CI URLs moved from `claude-select` to `decision-picker`: the
+> README's clone/CI URLs moved from `claude-select` to `tiltrank`: the
 > name described a Claude-only skill that no longer exists now that the same
 > SKILL.md is ported to Hermes and pi, and it disagreed with the skill it
 > contains. Local registration paths were updated with it — the two symlinks in
-> `~/.agents/skills/decision-picker/` were rewritten relative (so the next rename
+> `~/.agents/skills/tiltrank/` were rewritten relative (so the next rename
 > does not break them), `~/.pi/agent/settings.json` `packages[]`, and
 > `skills.external_dirs` in `~/.hermes/config.yaml`.
 
@@ -45,22 +45,22 @@ run before the claim becomes fact.
 | Claude Code construct | Hermes equivalent | pi equivalent |
 |---|---|---|
 | Skills dir `.claude/skills/` | `$HERMES_HOME/skills/<category>/<name>/` (user-local via `skill_manage create`; in-repo via `write_file` per hardline standard) | `~/.pi/agent/skills/<name>/` (global, trusted by default); project `.pi/skills/` loads only after project trust |
-| `${CLAUDE_SKILL_DIR}` | No env var; SKILL.md resolves its scripts from the skill's own reported base dir (Hermes surfaces `skill_dir` when the skill loads); the touchdesigner peer uses `${HERMES_HOME:-$HOME/.hermes}/skills/<category>/<name>/scripts/...` | `{baseDir}` placeholder as used by installed pi skills (e.g. `burpsuite-project-parser`), or a stable absolute path: `$HOME/.pi/agent/skills/decision-picker/scripts/rubric.py` — global skills live at a fixed path |
+| `${CLAUDE_SKILL_DIR}` | No env var; SKILL.md resolves its scripts from the skill's own reported base dir (Hermes surfaces `skill_dir` when the skill loads); the touchdesigner peer uses `${HERMES_HOME:-$HOME/.hermes}/skills/<category>/<name>/scripts/...` | `{baseDir}` placeholder as used by installed pi skills (e.g. `burpsuite-project-parser`), or a stable absolute path: `$HOME/.pi/agent/skills/tiltrank/scripts/rubric.py` — global skills live at a fixed path |
 | `AskUserQuestion` (≤4 options, `(Recommended)`, `Other` row, `multiSelect`) | **`clarify` tool** — structural match: 1–5 questions, ≤4 choices, first choice is auto-marked `(Recommended)`, an `Other` free-text row is auto-appended, `multi_select` supported | **None built-in.** pi ships only read/bash/edit/write/powershell(+grep/find/ls). Requires a small **pi extension** (TypeScript) registering a custom tool that renders via `ctx.ui` (`select` / `confirm` / `input` / `custom`) — the extensions doc lists "interactive tools (questions, wizards, custom dialogs)" as a first-class use case |
 | `allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rubric.py:*)` | No per-skill tool pre-approval in frontmatter; Hermes gates tools via global approval modes. Drop the field; keep the exact heredoc invocation form so any prefix-based permission rule the user sets still matches | `allowed-tools` exists but is experimental and is a **space-delimited tool-name list** — it can pre-approve `bash`, not a specific command. Weaker granularity; acceptable |
 | `claude -p --output-format stream-json` | `hermes chat -q "<prompt>" --oneshot --format stream-json` (verified flags; verified live: one-shot stream-json emits JSONL on **stdout** as FLAT events — `{"type":"text","text":...}` and `{"type":"tool_use","name":...,"input":...}` — ending with a `{"type":"result"}` event carrying `text` and `session_id`; captured 2026-09-18, hermes 0.21.3. **Not** Claude-shaped assistant envelopes — the eval adapter must normalize). Session state persists in Hermes' SQLite store (`~/.hermes/state.db`), **not** `~/.hermes/sessions/*.jsonl` — that earlier claim was wrong. The eval parses stdout, not session files. **Pin cwd with `--in "$PWD"`** — one-shot Hermes does not inherit the invoking shell's cwd (known pitfall: wrong-repo commits) | `pi -p --mode json --no-session` per scenario, or `--session-dir <tmpdir>` + parse the session JSONL (format verified: `type: message`, `message.role`, `message.content[]` blocks; version 3) |
-| Skill preloading for the eval | `hermes chat -s decision-picker` (the `-s/--skills` flag preloads, bypassing description-trigger unreliability) | `pi --skill <path>` (repeatable; additive even with `--no-skills`) — also `--tools`/`--exclude-tools` to pin the toolset deterministically |
+| Skill preloading for the eval | `hermes chat -s tiltrank` (the `-s/--skills` flag preloads, bypassing description-trigger unreliability) | `pi --skill <path>` (repeatable; additive even with `--no-skills`) — also `--tools`/`--exclude-tools` to pin the toolset deterministically |
 | `/panel` slash opt-in | Hermes has in-session slash commands; a skill cannot register one. Treat the literal text `/panel` in the user message as the deterministic opt-in — it arrives as a normal user message either way | The **extension registers it properly**: `pi.registerCommand("panel", ...)` — cleanest mapping of the three |
 | `council` skill (optional escalation) | `council` exists in Hermes' skill catalog — same caveat prose carries over unchanged | `council` exists in `~/.pi/agent/skills/` (ECC origin) — same |
-| Headless ask-availability ceiling | `clarify` in headless `hermes chat -q` faces the same problem `AskUserQuestion` has in `claude -p` — the eval must keep using decision-log ground truth, exactly as the Claude eval already does (this ceiling is already documented and designed around in PLAN.md) | Same: in `-p` mode there is no TTY, so the extension's UI cannot render; eval ground truth stays `$DECISION_PICKER_LOG` |
+| Headless ask-availability ceiling | `clarify` in headless `hermes chat -q` faces the same problem `AskUserQuestion` has in `claude -p` — the eval must keep using decision-log ground truth, exactly as the Claude eval already does (this ceiling is already documented and designed around in PLAN.md) | Same: in `-p` mode there is no TTY, so the extension's UI cannot render; eval ground truth stays `$TILTRANK_LOG` |
 | `claude plugin validate` | Hermes in-repo validation script (`tools/skill_manager_tool.py::_validate_frontmatter`) + hardline review (description ≤60 chars — see below) | pi validates leniently against the Agent Skills spec at load: warnings, not failures |
 
 ---
 
 ## Hermes port — design
 
-**Target:** `~/.hermes/skills/productivity/decision-picker/` (user-local) or
-`skills/productivity/decision-picker/` if contributed upstream to the
+**Target:** `~/.hermes/skills/productivity/tiltrank/` (user-local) or
+`skills/productivity/tiltrank/` if contributed upstream to the
 hermes-agent repo.
 
 ### What changes
@@ -77,7 +77,7 @@ hermes-agent repo.
    limit breaks on the first copy edit):
    ```yaml
    ---
-   name: decision-picker
+   name: tiltrank
    description: Choose between options with a scored, ask-first rubric.
    allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rubric.py:*)
    version: 0.2.0
@@ -129,7 +129,7 @@ hermes-agent repo.
    directory (Hermes reports it when the skill loads) and run
    `python3 <skill-dir>/scripts/rubric.py` with the same heredoc payload
    contract. Alternatively pin the absolute path
-   `${HERMES_HOME:-$HOME/.hermes}/skills/productivity/decision-picker/scripts/rubric.py`
+   `${HERMES_HOME:-$HOME/.hermes}/skills/productivity/tiltrank/scripts/rubric.py`
    — user-local skills have a stable location, and profiles relocate via
    `$HERMES_HOME` automatically. Prefer the absolute form: it cannot be
    misresolved by a model guessing relative paths from the project cwd.
@@ -138,7 +138,7 @@ hermes-agent repo.
    `_hermes_adapter` behind `--driver hermes`:
    ```
    hermes chat -q "<scenario>" --oneshot --format stream-json \
-     -s decision-picker -t terminal,file,clarify --in <scenario-cwd>
+     -s tiltrank -t terminal,file,clarify --in <scenario-cwd>
    ```
    Deliberately **no `--yolo`** and toolset-scoped via `-t`: the scenario set
    contains a literal `rm -rf /tmp/x` injection candidate, and the eval must
@@ -147,14 +147,14 @@ hermes-agent repo.
    `--in` is mandatory for the same reason the memory entry exists: one-shot
    Hermes resolves cwd from its own session, not the invoking shell.
    Tool-call trace parsing reads the stdout JSONL (verified live; see the
-   mapping table). The `$DECISION_PICKER_LOG` ground-truth mechanism is
+   mapping table). The `$TILTRANK_LOG` ground-truth mechanism is
    unchanged — that is the point of having built it around the script rather
    than the harness.
 
 6. **Body conventions.** Hermes review requires commands framed through
    Hermes tools (`terminal`, `read_file`, `patch`), no machine-local paths,
    modern section order, and — for an upstream PR — a test file at
-   `tests/skills/test_decision_picker_skill.py` plus the docs-generator
+   `tests/skills/test_tiltrank_skill.py` plus the docs-generator
    regen with scope discipline.
 
 ### Hermes-specific risk
@@ -174,7 +174,7 @@ call-count" mitigation would have been unmeasurable.
 
 ## pi port — design
 
-**Target:** `~/.pi/agent/skills/decision-picker/` + one extension, installed
+**Target:** `~/.pi/agent/skills/tiltrank/` + one extension, installed
 the way pi actually loads extensions: `pi install ./path/to/extension`
 (registers it in pi's settings and tracks it for `pi update` / `pi list`),
 **not** a magic auto-discovered `~/.pi/agent/extensions/` directory — that
@@ -183,7 +183,7 @@ discovery mechanism (the earlier layout claimed it did). A git-hosted
 source (`pi install git:github.com/<user>/<repo>`) is the long-term shape
 once the extension has a repo of its own; the local-path form is fine for
 development. Extension code lives in this repo at
-`extensions/decision-picker.ts` (single file while it stays small;
+`extensions/tiltrank.ts` (single file while it stays small;
 directory with `index.ts` + `package.json` if it grows).
 
 ### What changes
@@ -214,7 +214,7 @@ directory with `index.ts` + `package.json` if it grows).
 3. **Script paths.** Use the `{baseDir}` placeholder convention observed in
    installed pi skills (`{baseDir}/scripts/burp-search.sh` in
    `burpsuite-project-parser`), falling back to the stable absolute path
-   `$HOME/.pi/agent/skills/decision-picker/scripts/rubric.py` for global
+   `$HOME/.pi/agent/skills/tiltrank/scripts/rubric.py` for global
    installs. pi's docs also bless "relative paths from the skill directory".
    pi loads skills from `~/.agents/skills/` too — if the skill is deployed
    there for multi-harness sharing, prefer `{baseDir}`.
@@ -232,13 +232,13 @@ directory with `index.ts` + `package.json` if it grows).
    pi -p --mode json --no-session --skill <skill-dir> --tools read,bash -- "<scenario>"
    ```
    Tool calls are read from the driver's JSON-mode stdout; ground truth is
-   `$DECISION_PICKER_LOG`, identical division of labor to the other two
+   `$TILTRANK_LOG`, identical division of labor to the other two
    drivers. `--tools read,bash` pins the toolset (rubric.py needs only bash
    + file reads) — same restraint rationale as the Hermes driver: the
    scenario set contains an `rm -rf` injection candidate and the eval must
    survive an agent that tries to execute it. `--skill` loads the SKILL.md
    content directly, bypassing description-trigger unreliability; the
-   `/skill:decision-picker` interactive command exists for users and is
+   `/skill:tiltrank` interactive command exists for users and is
    worth a README line. **Pin the model** (`--model` / `PI_EVAL_MODEL`):
    pi's default-model resolution scans environment API keys, so inside a
    Hermes session it resolves `<env-api-key>` keys to a provider that
@@ -254,7 +254,7 @@ directory with `index.ts` + `package.json` if it grows).
    form and raises on a session-header-only stream (vacuous-trace guard).
 
 6. **Skill loading reliability.** pi's docs warn models don't always read
-   the SKILL.md even when the description matches; `/skill:decision-picker`
+   the SKILL.md even when the description matches; `/skill:tiltrank`
    forces it. The eval should therefore invoke with `--skill <path>` (loads
    content directly), and the README for the pi port should tell users the
    command exists.
@@ -305,16 +305,16 @@ prevent a fully literal single file:
 **Deployment layout** — one canonical repo; registration, not symlinks:
 
 ```
-decision-picker/.claude/skills/decision-picker        (source of truth, as now)
+tiltrank/.claude/skills/tiltrank        (source of truth, as now)
 ~/.hermes: skills.external_dirs -> .claude/skills   (config registration)
-~/.agents/skills/decision-picker                     (real dir; SKILL.md + scripts symlinked to the repo)
-~/.claude/skills/decision-picker -> ../../.agents/skills/decision-picker
-~/.pi/agent/skills/decision-picker -> ../../../.agents/skills/decision-picker
+~/.agents/skills/tiltrank                     (real dir; SKILL.md + scripts symlinked to the repo)
+~/.claude/skills/tiltrank -> ../../.agents/skills/tiltrank
+~/.pi/agent/skills/tiltrank -> ../../../.agents/skills/tiltrank
 pi extension: pi install <path-or-git-source>       (registered, not dropped in a dir)
 ```
 
 **Global install, verified 2026-09-19** (probe: ask each CLI from `/tmp` to
-list its skills; all three now name `decision-picker`). The shared
+list its skills; all three now name `tiltrank`). The shared
 `~/.agents/skills` entry is a **real directory containing symlinks** to the
 repo's `SKILL.md` and `scripts/` — not a symlinked directory — so it survives
 both scanner families (pathlib `rglob`, which does not descend into symlinked
@@ -337,7 +337,7 @@ and pathlib `rglob` does **not** descend into symlinked directories
 but be invisible to `skill_manage` patch/write_file — the "verify
 skill_manage sees it" step of the old plan would have half-failed on
 execution. `skills.external_dirs` registration (verified working:
-`_find_skill('decision-picker')` resolves through it, and the live smoke
+`_find_skill('tiltrank')` resolves through it, and the live smoke
 run below found and executed the skill) has no such split: one config entry,
 all scanners see it, and the repo stays the single source of truth.
 
@@ -348,7 +348,7 @@ sync is undesirable (the skill is small and rubric.py is the contract).
 **Deployment verification (Hermes)** — run live, not assumed:
 - `claude plugin validate .claude/skills` → passes (union frontmatter).
 - Hermes `_validate_frontmatter` logic on the union file → passes; description 55 chars, 5 under the 60-char new-skill limit.
-- `skills.external_dirs` registration → `_find_skill('decision-picker')` resolves.
+- `skills.external_dirs` registration → `_find_skill('tiltrank')` resolves.
 - `check_trace.py --live --driver hermes --only clear-winner` → the driver ran
   end-to-end: skill invoked 1/1, rubric.py executed, decision log written,
   recommendation produced. The run surfaced a real protocol violation

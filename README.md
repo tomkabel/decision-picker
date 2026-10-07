@@ -1,10 +1,12 @@
-# decision-picker
+# tiltrank
 
 **Give your AI agent a few options. It scores them openly, drops the ones that break your rules, and lets you make the final pick from a menu.**
 
+The name comes from the stability check: tiltrank tilts the weights a few hundred times and reports whether the top pick still wins.
+
 Works as a skill in **Claude Code**, **Hermes Agent**, and **pi**. Pure Python, no dependencies.
 
-[![CI](https://github.com/tomkabel/decision-picker/actions/workflows/test.yml/badge.svg)](https://github.com/tomkabel/decision-picker/actions/workflows/test.yml)
+[![CI](https://github.com/tomkabel/tiltrank/actions/workflows/test.yml/badge.svg)](https://github.com/tomkabel/tiltrank/actions/workflows/test.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)](#requirements)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-skill-D97757)](https://docs.claude.com/en/docs/claude-code/skills)
@@ -13,7 +15,7 @@ Works as a skill in **Claude Code**, **Hermes Agent**, and **pi**. Pure Python, 
 [![Agent Skills](https://img.shields.io/badge/Agent%20Skills-spec--compliant-8A2BE2)](https://agentskills.io/)
 
 <p align="center">
-  <img src="docs/demo.svg" alt="decision-picker in a Claude Code session: the agent scores four caching options, excludes the managed SaaS for breaking the self-hosted rule, and shows a menu with Redis recommended" width="900">
+  <img src="docs/demo.svg" alt="tiltrank in a Claude Code session: the agent scores four caching options, excludes the managed SaaS for breaking the self-hosted rule, and shows a menu with Redis recommended" width="900">
 </p>
 
 ## The problem
@@ -22,7 +24,7 @@ Ask an agent "which of these four should I use?" and you get one confident
 paragraph. You can't tell what it weighed, whether the runner-up lost by a mile
 or a hair, or whether it checked anything first.
 
-## What decision-picker does instead
+## What tiltrank does instead
 
 1. **Drops options that break a hard rule.** "Must be self-hosted" takes out the
    SaaS option before any scoring, and the menu tells you it was removed and why.
@@ -41,9 +43,9 @@ like *Strong lead*, *Contested*, and *Weak*.
 ## Quick start
 
 ```bash
-git clone https://github.com/tomkabel/decision-picker.git
-cd decision-picker
-ln -s "$PWD/.claude/skills/decision-picker" ~/.claude/skills/decision-picker
+git clone https://github.com/tomkabel/tiltrank.git
+cd tiltrank
+ln -s "$PWD/.claude/skills/tiltrank" ~/.claude/skills/tiltrank
 ```
 
 That's the whole install for Claude Code. Then ask your agent to choose between
@@ -51,7 +53,7 @@ some options:
 
 > Pick a queue for the job runner: Redis streams, RabbitMQ, or Postgres `SKIP LOCKED`. We can't add new infra.
 
-The skill triggers by itself. You can also call it with `/decision-picker`, or
+The skill triggers by itself. You can also call it with `/tiltrank`, or
 add `/panel` to force a second-opinion review.
 
 <details>
@@ -71,10 +73,10 @@ descend into a symlinked directory), then install the extension that provides th
 menu:
 
 ```bash
-mkdir -p ~/.agents/skills/decision-picker
-ln -sfn "$PWD/.claude/skills/decision-picker/SKILL.md" ~/.agents/skills/decision-picker/SKILL.md
-ln -sfn "$PWD/.claude/skills/decision-picker/scripts" ~/.agents/skills/decision-picker/scripts
-ln -sfn ../../.agents/skills/decision-picker ~/.pi/agent/skills/decision-picker
+mkdir -p ~/.agents/skills/tiltrank
+ln -sfn "$PWD/.claude/skills/tiltrank/SKILL.md" ~/.agents/skills/tiltrank/SKILL.md
+ln -sfn "$PWD/.claude/skills/tiltrank/scripts" ~/.agents/skills/tiltrank/scripts
+ln -sfn ../../.agents/skills/tiltrank ~/.pi/agent/skills/tiltrank
 pi install "$PWD"
 ```
 
@@ -149,7 +151,7 @@ count.
 The agent normally calls this script for you. To run it by hand:
 
 ```bash
-python3 .claude/skills/decision-picker/scripts/rubric.py <<'JSON'
+python3 .claude/skills/tiltrank/scripts/rubric.py <<'JSON'
 {"choices": [
   {"label": "Redis",         "evidence": 90, "scores": {"fit_to_constraints": 90, "reversibility": 60, "precedent": 90}},
   {"label": "In-memory LRU", "evidence": 60, "scores": {"fit_to_constraints": 20, "reversibility": 90, "precedent": 20}},
@@ -170,14 +172,14 @@ NOTE: utility points on the anchor scale, not a confidence probability. Show the
 ```
 
 Add `--json` for machine-readable output and `--log` to append the decision to
-`.decisions.log`, or set `$DECISION_PICKER_LOG`. Each record holds the weights,
+`.decisions.log`, or set `$TILTRANK_LOG`. Each record holds the weights,
 scores, verdict, your pick, and whether you overrode the recommendation, so you
 can later check whether the recommendations held up.
 
 ## Testing
 
 ```bash
-S=.claude/skills/decision-picker/scripts
+S=.claude/skills/tiltrank/scripts
 python3 $S/test_rubric.py          # scoring, gating, validation
 python3 $S/eval/check_trace.py     # agent-behaviour checks on recorded traces
 python3 $S/eval/check_trace.py --live --driver claude --repeat 3   # real sessions, costs tokens
@@ -237,7 +239,7 @@ The net result was deleting two of the three original scripts.
 ## Project layout
 
 ```
-.claude/skills/decision-picker/
+.claude/skills/tiltrank/
 ├── SKILL.md              the workflow the agent follows (the actual product)
 └── scripts/
     ├── rubric.py         scoring, rule gating, stability, decision log
@@ -246,7 +248,7 @@ The net result was deleting two of the three original scripts.
         ├── check_trace.py   behaviour checks + live harness
         ├── fixtures.json    recorded traces, including broken ones
         └── scenarios.json   scenarios for --live runs
-extensions/decision-picker.ts   pi menu tool and /panel
+extensions/tiltrank.ts   pi menu tool and /panel
 ```
 
 ## Contributing

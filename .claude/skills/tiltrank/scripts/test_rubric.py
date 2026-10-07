@@ -302,7 +302,7 @@ def test_log_records_the_decision_and_divergence() -> None:
         assert cli(payload | {"pick": "Beta", "escalated": True},
                    "--log", str(log)).returncode == 0
         # env var is the default for --log, so a live eval captures every run
-        assert cli(payload | {"pick": "Alpha"}, env={"DECISION_PICKER_LOG": str(log)}).returncode == 0
+        assert cli(payload | {"pick": "Alpha"}, env={"TILTRANK_LOG": str(log)}).returncode == 0
 
         rows = [json.loads(x) for x in log.read_text().splitlines()]
         assert [r["kind"] for r in rows] == ["ranking", "decision", "decision"]

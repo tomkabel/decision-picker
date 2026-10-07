@@ -11,7 +11,7 @@ A portable agent skill (Claude Code, Hermes Agent, pi) that scores a list of opt
 All Python is stdlib-only, >= 3.10. No venv, no install step.
 
 ```bash
-S=.claude/skills/decision-picker/scripts
+S=.claude/skills/tiltrank/scripts
 python3 $S/test_rubric.py                  # unit tests (no framework; runs every test_* function)
 python3 $S/eval/check_trace.py             # offline protocol assertions over fixtures.json
 ruff check $S                              # lint (CI)
@@ -21,7 +21,7 @@ cd extensions && npm install && npx tsc --noEmit   # pi extension typecheck (CI)
 # single test: import the module and call the function
 cd $S && python3 -c "import test_rubric as t; t.test_custom_weights()"
 
-# run the rubric directly: JSON on stdin; --json for machine output, --log / $DECISION_PICKER_LOG to append a record
+# run the rubric directly: JSON on stdin; --json for machine output, --log / $TILTRANK_LOG to append a record
 python3 $S/rubric.py --json < input.json
 
 # live eval (real headless sessions, costs tokens, non-deterministic)
@@ -32,10 +32,10 @@ CI (`.github/workflows/test.yml`) runs on Python 3.10 and 3.13 and fails on any 
 
 ## Architecture
 
-- `.claude/skills/decision-picker/SKILL.md` — the 5-step workflow the agent follows (frame → score → escalate → ask → act/record), plus anti-patterns. Scripts are addressed via `${CLAUDE_SKILL_DIR}`, so the directory must stay self-contained.
+- `.claude/skills/tiltrank/SKILL.md` — the 5-step workflow the agent follows (frame → score → escalate → ask → act/record), plus anti-patterns. Scripts are addressed via `${CLAUDE_SKILL_DIR}`, so the directory must stay self-contained.
 - `scripts/rubric.py` — validates sub-scores (must be anchor band values from `LEVELS`, or `null`; free numbers are rejected), excludes `feasible: false` options before any arithmetic, ranks on the conservative bound (unknowns contribute nothing), resamples weights + jitters ratings with a fixed `SEED` to compute stability/band, emits escalation `reasons`, and appends to `.decisions.log` (JSONL, gitignored). `evidence` is deliberately **not** a weighted criterion — it only drives escalation.
-- `scripts/eval/check_trace.py` — `check(trace)` holds the protocol assertions (≤4 options, `(Recommended)` first, no percentages shown to the user, no re-scoring to dismiss an escalation reason, injection-shaped `Other` answers never executed, final action matches the user's pick). Offline mode runs `fixtures.json`; `--live` drives a harness CLI per `scenarios.json` and captures the rubric log via `$DECISION_PICKER_LOG` as ground truth (ask-tool arguments are only self-reported — `AskUserQuestion` doesn't exist in headless `claude -p`).
-- `extensions/decision-picker.ts` — pi extension providing the `decision_picker` ask tool (AskUserQuestion-shaped) and `/panel`. Rendering and returning the pick only; never duplicate scoring/gating logic there.
+- `scripts/eval/check_trace.py` — `check(trace)` holds the protocol assertions (≤4 options, `(Recommended)` first, no percentages shown to the user, no re-scoring to dismiss an escalation reason, injection-shaped `Other` answers never executed, final action matches the user's pick). Offline mode runs `fixtures.json`; `--live` drives a harness CLI per `scenarios.json` and captures the rubric log via `$TILTRANK_LOG` as ground truth (ask-tool arguments are only self-reported — `AskUserQuestion` doesn't exist in headless `claude -p`).
+- `extensions/tiltrank.ts` — pi extension providing the `tiltrank` ask tool (AskUserQuestion-shaped) and `/panel`. Rendering and returning the pick only; never duplicate scoring/gating logic there.
 
 ## House rules
 

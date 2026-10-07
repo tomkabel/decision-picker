@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a problem with the decision-picker skill or its scripts.
+description: Report a problem with the tiltrank skill or its scripts.
 labels: ["bug"]
 body:
   - type: dropdown

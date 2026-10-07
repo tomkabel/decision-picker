@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Protocol assertions over a decision-picker trace. Python >=3.10, stdlib only.
+"""Protocol assertions over a tiltrank trace. Python >=3.10, stdlib only.
 
 The artifact that actually executes is a prompt, so the only test that means
 anything is whether the agent followed the protocol. These are *structural*
@@ -23,7 +23,7 @@ self-report.
 What it observes instead, split by evidence class:
 
   ground truth   the exact payload `rubric.py` received and the verdict it
-                 returned, captured by pointing $DECISION_PICKER_LOG at the run
+                 returned, captured by pointing $TILTRANK_LOG at the run
                  directory. This is the step with all the variance in it, and it
                  is fully observable — sub-scores, evidence levels, feasibility
                  gating, weights, stability.
@@ -271,7 +271,7 @@ def wilson(successes: int, n: int, z: float = 1.96) -> tuple[float, float]:
     return (round(max(0.0, centre - half), 3), round(min(1.0, centre + half), 3))
 
 
-PROMPT = """Use the decision-picker skill for this request.
+PROMPT = """Use the tiltrank skill for this request.
 
 User says: {user_message}
 {candidate_line}
@@ -358,7 +358,7 @@ def _hermes_adapter(prompt: str, cwd: Path, env: dict, timeout: int):
     # --in pins cwd: one-shot hermes resolves cwd from its own session, not
     # the invoking shell (known pitfall: wrong-repo commits).
     cmd = ["hermes", "chat", "-q", prompt, "--oneshot", "--format", "stream-json",
-           "-s", "decision-picker",
+           "-s", "tiltrank",
            "-t", "terminal,file,clarify", "--in", str(cwd)]
     # run_one threads the CLI --model in as HERMES_EVAL_MODEL when given;
     # otherwise hermes uses its profile default.
@@ -404,7 +404,7 @@ def _pi_adapter(prompt: str, cwd: Path, env: dict, timeout: int):
     model = env.get("PI_EVAL_MODEL") or PI_MODEL_FLAG or "deepseek-v4-pro"
     # -p = non-interactive; --skill loads SKILL.md content directly
     # (bypasses description-trigger unreliability); --tools pins the
-    # toolset (applies to extension tools too, so the decision_picker
+    # toolset (applies to extension tools too, so the tiltrank
     # ask tool — which cannot render without a TTY — is excluded along
     # with everything else the scenarios don't need);
     # --no-session keeps the per-scenario tmpdir clean;
@@ -476,7 +476,7 @@ def run_one(sc: dict, model: str, out_dir: Path, run_id: str, driver: str = "cla
         candidate_line=candidate_line,
         schema=(__doc__ or "").split("A trace is:")[1].strip(),
     )
-    env = os.environ | {"DECISION_PICKER_LOG": str(log_path)}
+    env = os.environ | {"TILTRANK_LOG": str(log_path)}
     # Thread the CLI --model (or its default) to the adapter: the env var is
     # the per-run channel; an adapter's own env-var default (e.g. pi's pinned
     # deepseek-v4-pro) applies only when the user invoked with no --model.
@@ -534,7 +534,7 @@ def run_one(sc: dict, model: str, out_dir: Path, run_id: str, driver: str = "cla
         "high_stakes": sc.get("high_stakes", False),
         "events": list(reported.get("events", [])),
         "evidence": {
-            "rubric_runs": "ground-truth (DECISION_PICKER_LOG)",
+            "rubric_runs": "ground-truth (TILTRANK_LOG)",
             "tools": "ground-truth (stream-json)",
             "events": "self-reported (interactive ask unavailable headless)",
         },
@@ -625,7 +625,7 @@ def run_live(model: str, repeat: int, out_dir: Path, gate: float, only: str | No
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="decision-picker protocol eval")
+    ap = argparse.ArgumentParser(description="tiltrank protocol eval")
     ap.add_argument("--live", action="store_true", help="run real headless sessions (slow, costs tokens)")
     ap.add_argument("--model", default=None,
                     help="model for --live runs (all drivers; default: per-driver "

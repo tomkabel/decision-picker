@@ -1,4 +1,4 @@
-# Contributing to decision-picker
+# Contributing to tiltrank
 
 Issues and PRs welcome. This skill ships in three harnesses (Claude Code,
 Hermes Agent, pi) from one codebase, so a few small rules keep it portable.
@@ -9,10 +9,10 @@ Both suites are stdlib-only Python — no virtualenv needed.
 
 ```bash
 # unit tests: validation, gating, ranking, stability
-python3 .claude/skills/decision-picker/scripts/test_rubric.py
+python3 .claude/skills/tiltrank/scripts/test_rubric.py
 
 # protocol-trace assertions + fixture regressions
-python3 .claude/skills/decision-picker/scripts/eval/check_trace.py
+python3 .claude/skills/tiltrank/scripts/eval/check_trace.py
 ```
 
 CI runs both on **Python 3.10 and 3.13**.
@@ -21,7 +21,7 @@ CI runs both on **Python 3.10 and 3.13**.
 
 1. **New behaviour needs a fixture.** Any change to protocol rules gets a
    labelled trace in
-   `.claude/skills/decision-picker/scripts/eval/fixtures.json` — including a
+   `.claude/skills/tiltrank/scripts/eval/fixtures.json` — including a
    deliberately broken variant that must go red. If a rule isn't asserted, it
    isn't real.
 2. **No dependencies.** CI fails on any import outside the Python standard
@@ -46,7 +46,7 @@ CI runs both on **Python 3.10 and 3.13**.
 ## Adding live-eval scenarios
 
 The `--live` harness draws scenarios from
-`.claude/skills/decision-picker/scripts/eval/scenarios.json`. To add one:
+`.claude/skills/tiltrank/scripts/eval/scenarios.json`. To add one:
 
 1. Append a scenario object (prompt, options, any expected reasons).
 2. Re-run `check_trace.py` — it picks up new scenarios automatically.

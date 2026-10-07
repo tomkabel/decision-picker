@@ -9,7 +9,7 @@ public issue for security-relevant bugs. We aim to acknowledge reports within
 
 ## Security boundary — the rubric is a decision aid, not an authorization system
 
-`decision-picker` ranks options and surfaces a recommendation. It does **not**
+`tiltrank` ranks options and surfaces a recommendation. It does **not**
 authorize anything. Consequential actions — deployments, schema changes, data
 deletions, money movement — still require their normal confirmation step
 regardless of what the skill recommends. Treat the output the way you'd treat
@@ -38,7 +38,7 @@ The eval harness includes injection-shaped candidates — including a literal
 than executing them. If you change how candidate text is handled, re-run:
 
 ```bash
-python3 .claude/skills/decision-picker/scripts/eval/check_trace.py
+python3 .claude/skills/tiltrank/scripts/eval/check_trace.py
 ```
 
 and confirm the injection fixtures still pass.

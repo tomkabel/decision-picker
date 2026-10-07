@@ -23,13 +23,13 @@ jobs:
       - name: ruff lint
         run: |
           pip install ruff
-          ruff check .claude/skills/decision-picker/scripts/
+          ruff check .claude/skills/tiltrank/scripts/
 
       - name: unit tests (validation, gating, ranking)
-        run: python3 .claude/skills/decision-picker/scripts/test_rubric.py
+        run: python3 .claude/skills/tiltrank/scripts/test_rubric.py
 
       - name: protocol assertions (offline fixtures)
-        run: python3 .claude/skills/decision-picker/scripts/eval/check_trace.py
+        run: python3 .claude/skills/tiltrank/scripts/eval/check_trace.py
 
       - name: no stray imports outside the stdlib
         run: |

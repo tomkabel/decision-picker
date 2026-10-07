@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Weighted multi-criteria scoring for decision-picker. Python >=3.10, stdlib only.
+"""Weighted multi-criteria scoring for tiltrank. Python >=3.10, stdlib only.
 
 The number this produces is an internal sort key, NOT a confidence probability.
 A weighted total is a multi-criteria *utility* score; `P(this option is correct)`
@@ -491,9 +491,9 @@ def main(argv: list[str] | None = None) -> int:
         "--log",
         nargs="?",
         const=".decisions.log",
-        default=os.environ.get("DECISION_PICKER_LOG"),
+        default=os.environ.get("TILTRANK_LOG"),
         help="append a JSONL decision record here (default .decisions.log; "
-        "also set by $DECISION_PICKER_LOG)",
+        "also set by $TILTRANK_LOG)",
     )
     args = ap.parse_args(argv)
 

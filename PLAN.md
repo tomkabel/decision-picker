@@ -1,4 +1,4 @@
-# decision-picker — remediation plan (v2)
+# tiltrank — remediation plan (v2)
 
 > This is a design history document. Open items are noted but the plan is complete through Phase 10.
 
@@ -355,7 +355,7 @@ advertised, and none of them were visible from the prose.
       table shows `robust / marginal / fragile` and the figures stay in `--json`.
       Caught by the test suite, not by review.
 - [x] **`--live` rebuilt around what is observable.** Ground truth comes from
-      `$DECISION_PICKER_LOG` (the exact payload `rubric.py` received and the
+      `$TILTRANK_LOG` (the exact payload `rubric.py` received and the
       verdict it returned — the step with all the variance, fully observable) and
       from `--output-format stream-json` tool calls; the composed ask is retained
       but labelled `self-reported` in every saved trace. `--repeat k` measures
@@ -365,7 +365,7 @@ advertised, and none of them were visible from the prose.
       `TimeoutExpired` caught per run. Fixes 4.
 - [x] **`--log` implemented.** One JSONL line per decision: weights, every
       sub-score, evidence, verdict, whether review ran, the user's pick, and
-      `diverged`. `$DECISION_PICKER_LOG` is the flag's default, which is what
+      `diverged`. `$TILTRANK_LOG` is the flag's default, which is what
       makes the eval's ground truth free. Fixes 10.
 - [x] **Label sanitisation** — C0/C1 controls, zero-width characters, bidi
       overrides, length cap. Not an injection defence (nothing in a prompt is);

@@ -1,5 +1,5 @@
 ---
-name: decision-picker
+name: tiltrank
 description: Choose between options with a scored, ask-first rubric. Use when the user hands you several candidate options and wants a reasoned, defensible pick — a transparent multi-criteria ranking, an overridable default, and an escalation path for close or high-stakes calls.
 allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/rubric.py:*)
 version: 0.2.0
@@ -19,13 +19,13 @@ metadata:
     related_skills: [council]
 ---
 
-# Decision Picker
+# Tiltrank
 
 Wraps the harness's native interactive-ask tool with a multi-criteria rubric.
 Do not build a custom picker — every target harness already renders the choice
 list, the recommended-option marker, and the free-text "Other" escape hatch
 natively (`AskUserQuestion` on Claude, `clarify` on Hermes, the pi
-`decision_picker` extension tool).
+`tiltrank` extension tool).
 
 **The one rule that governs everything below:** the rubric produces a *utility*
 score, not a probability. It is an internal sort key. Never show the user a
@@ -135,8 +135,8 @@ form depends on the harness:
 | harness | invocation |
 |---|---|
 | Claude Code | `python3 "${CLAUDE_SKILL_DIR}/scripts/rubric.py"` — `${CLAUDE_SKILL_DIR}` resolves to this skill's directory; the heredoc form is what the pre-approval in `allowed-tools` matches, so use it as written |
-| Hermes Agent | `python3 "${HERMES_HOME:-$HOME/.hermes}/skills/<category>/decision-picker/scripts/rubric.py"` via the `terminal` tool — global skills live at a stable location, and profiles relocate via `$HERMES_HOME` automatically |
-| pi | `python3 "$HOME/.pi/agent/skills/decision-picker/scripts/rubric.py"` (or `{baseDir}/scripts/rubric.py` where `{baseDir}` is supported) via `bash` |
+| Hermes Agent | `python3 "${HERMES_HOME:-$HOME/.hermes}/skills/<category>/tiltrank/scripts/rubric.py"` via the `terminal` tool — global skills live at a stable location, and profiles relocate via `$HERMES_HOME` automatically |
+| pi | `python3 "$HOME/.pi/agent/skills/tiltrank/scripts/rubric.py"` (or `{baseDir}/scripts/rubric.py` where `{baseDir}` is supported) via `bash` |
 
 The payload contract is identical everywhere — a single JSON object on stdin.
 **Use the candidates from the user's scenario, not the labels below** — the
@@ -241,7 +241,7 @@ keep honest.
 |---|---|---|---|
 | Claude Code | `AskUserQuestion`, `options[]` with `label`/`description` | append `(Recommended)` to the top option's `label` | auto-appended "Other" row |
 | Hermes Agent | `clarify` tool, `questions[].choices[]` (≤4), `multi_select` for keep-narrowing | put the recommended option **first** — position is the marker; there is no label field to edit | auto-appended "Other" free-text row |
-| pi | `decision_picker` extension tool (same JSON shape as `AskUserQuestion`) | append `(Recommended)` to the first option's `label` | "Other" choice, free-text input |
+| pi | `tiltrank` extension tool (same JSON shape as `AskUserQuestion`) | append `(Recommended)` to the first option's `label` | "Other" choice, free-text input |
 
 Shared invariants regardless of harness: at most 4 options, exactly one
 recommended marker matching the rubric's top option, an Other path that can

@@ -1,5 +1,5 @@
 name: Feature request
-description: Suggest a new behavior or improvement for decision-picker.
+description: Suggest a new behavior or improvement for tiltrank.
 labels: ["enhancement"]
 body:
   - type: textarea

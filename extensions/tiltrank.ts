@@ -1,9 +1,9 @@
 /**
- * decision-picker extension for pi (badlogic's pi-mono coding agent).
+ * tiltrank extension for pi (badlogic's pi-mono coding agent).
  *
- * Provides the interactive ask surface the decision-picker skill needs:
+ * Provides the interactive ask surface the tiltrank skill needs:
  *
- * - `decision_picker` tool: same JSON shape as Claude Code's AskUserQuestion
+ * - `tiltrank` tool: same JSON shape as Claude Code's AskUserQuestion
  *   (questions[] with label/description/multiSelect), rendered through
  *   ctx.ui. The recommended option goes FIRST in the list; the extension
  *   prefixes its label with "(Recommended)" per the cross-harness
@@ -51,8 +51,8 @@ function renderOptions(options: OptionItem[]): string[] {
 
 export default function (pi: ExtensionAPI) {
 	pi.registerTool({
-		name: "decision_picker",
-		label: "Decision Picker Ask",
+		name: "tiltrank",
+		label: "Tiltrank Ask",
 		description:
 			"Ask the user to choose between options. Use when a scored rubric " +
 			"produced a ranked shortlist and the user must make the final pick. " +
