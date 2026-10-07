@@ -1,0 +1,45 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What this is
+
+A portable agent skill (Claude Code, Hermes Agent, pi) that scores a list of options with a weighted rubric, gates out infeasible ones, measures how stable the ranking is, and hands the pick to the user through the harness's native ask tool. **`SKILL.md` is the product**; the Python is a validator, feasibility gate, and the single source of truth for weights.
+
+## Commands
+
+All Python is stdlib-only, >= 3.10. No venv, no install step.
+
+```bash
+S=.claude/skills/decision-picker/scripts
+python3 $S/test_rubric.py                  # unit tests (no framework; runs every test_* function)
+python3 $S/eval/check_trace.py             # offline protocol assertions over fixtures.json
+ruff check $S                              # lint (CI)
+claude plugin validate .claude/skills      # SKILL.md frontmatter check (CI)
+cd extensions && npm install && npx tsc --noEmit   # pi extension typecheck (CI)
+
+# single test: import the module and call the function
+cd $S && python3 -c "import test_rubric as t; t.test_custom_weights()"
+
+# run the rubric directly: JSON on stdin; --json for machine output, --log / $DECISION_PICKER_LOG to append a record
+python3 $S/rubric.py --json < input.json
+
+# live eval (real headless sessions, costs tokens, non-deterministic)
+python3 $S/eval/check_trace.py --live --driver claude|hermes|pi [--only <scenario-id>] [--repeat N] [--model M]
+```
+
+CI (`.github/workflows/test.yml`) runs on Python 3.10 and 3.13 and fails on any import outside the stdlib (AST walk over `.claude/**/*.py`).
+
+## Architecture
+
+- `.claude/skills/decision-picker/SKILL.md` — the 5-step workflow the agent follows (frame → score → escalate → ask → act/record), plus anti-patterns. Scripts are addressed via `${CLAUDE_SKILL_DIR}`, so the directory must stay self-contained.
+- `scripts/rubric.py` — validates sub-scores (must be anchor band values from `LEVELS`, or `null`; free numbers are rejected), excludes `feasible: false` options before any arithmetic, ranks on the conservative bound (unknowns contribute nothing), resamples weights + jitters ratings with a fixed `SEED` to compute stability/band, emits escalation `reasons`, and appends to `.decisions.log` (JSONL, gitignored). `evidence` is deliberately **not** a weighted criterion — it only drives escalation.
+- `scripts/eval/check_trace.py` — `check(trace)` holds the protocol assertions (≤4 options, `(Recommended)` first, no percentages shown to the user, no re-scoring to dismiss an escalation reason, injection-shaped `Other` answers never executed, final action matches the user's pick). Offline mode runs `fixtures.json`; `--live` drives a harness CLI per `scenarios.json` and captures the rubric log via `$DECISION_PICKER_LOG` as ground truth (ask-tool arguments are only self-reported — `AskUserQuestion` doesn't exist in headless `claude -p`).
+- `extensions/decision-picker.ts` — pi extension providing the `decision_picker` ask tool (AskUserQuestion-shaped) and `/panel`. Rendering and returning the pick only; never duplicate scoring/gating logic there.
+
+## House rules
+
+- **New behaviour needs a fixture**: any protocol-rule change gets a labelled trace in `fixtures.json`, including a deliberately broken variant that must go red.
+- **No dependencies**: no `requirements.txt`, `pyproject.toml`, or vendored packages.
+- Changing scoring/protocol semantics usually means touching `SKILL.md`, `rubric.py`, and `check_trace.py` together — a rule only in prose isn't enforced, a rule only in code isn't followed.
+- Harness install quirks (Hermes and pi don't follow symlinked skill dirs for discovery) are documented in `README.md#install` and `docs/porting-hermes-pi.md`. `PLAN.md` is design history, not a task list.
