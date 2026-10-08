@@ -5,7 +5,7 @@ on:
   pull_request:
 
 jobs:
-  test:
+  tests:
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.os == 'macos-latest' }}
     strategy:
@@ -83,3 +83,23 @@ jobs:
       - name: install and typecheck
         if: steps.extcheck.outputs.exists == 'true'
         run: cd extensions && npm install && npx tsc --noEmit
+
+  # Required status check named 'test': matrix jobs report as
+  # 'test (os, python)', which never satisfies the protected-context name, so
+  # this aggregate job reports the bare 'test' check. always() + explicit
+  # failure (instead of a skip) so a red upstream can never vacuously satisfy
+  # the required check — skipped check runs count as passing.
+  test:
+    needs: [tests, validate-skill, extension-typecheck]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: fail unless every job above passed
+        run: |
+          echo "tests=${{ needs.tests.result }} validate-skill=${{ needs.validate-skill.result }} extension-typecheck=${{ needs.extension-typecheck.result }}"
+          if [ "${{ needs.tests.result }}" != "success" ] \
+             || [ "${{ needs.validate-skill.result }}" != "success" ] \
+             || [ "${{ needs.extension-typecheck.result }}" != "success" ]; then
+            echo "::error::a job in the test workflow did not succeed"
+            exit 1
+          fi
