@@ -264,4 +264,6 @@ PR. See [CONTRIBUTING.md](CONTRIBUTING.md), [CHANGELOG.md](CHANGELOG.md), and
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+[Mozilla Public License 2.0](LICENSE) (MPL-2.0). Copyright © 2026 Tom Kristian Abel (ProksiAbel OÜ).
+
+MPL-2.0 is file-level copyleft: you can bundle tiltrank into any project, open or proprietary, but changes to tiltrank's own files must stay under MPL-2.0. Copies obtained while the project was MIT-licensed keep their MIT terms.

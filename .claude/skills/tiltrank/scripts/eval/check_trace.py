@@ -328,8 +328,7 @@ HERMES_MODEL_FLAG = os.environ.get("HERMES_EVAL_MODEL", "")
 PI_MODEL_FLAG = os.environ.get("PI_EVAL_MODEL", "deepseek-v4-pro")
 CLAUDE_MODEL_FLAG = os.environ.get("CLAUDE_EVAL_MODEL", "")
 
-from pathlib import Path as _P
-SKILL_DIR = _P(__file__).resolve().parents[2]  # <skill>/scripts/eval/ -> <skill>
+SKILL_DIR = Path(__file__).resolve().parents[2]  # <skill>/scripts/eval/ -> <skill>
 
 
 def _claude_adapter(prompt: str, cwd: Path, env: dict, timeout: int):
